@@ -54,29 +54,28 @@ double osm_operation_time(unsigned int iterations)
 		b = std::rand();
 		c = std::rand();
 		d = std::rand();
-		if (gettimeofday(&st, nullptr) != 0) // Start measure
+		if (gettimeofday(&st, NULL) != 0) // Start measure
             return FINISH_ERROR;
         /* Do a lot of basic operations on random numbers */
-		for (j = 0; j < DEFAULT_ITER; ++j)
-		{
+		for (j = 0; j < DEFAULT_ITER; ++j) {
             //
-			a + b;
-			a & b;
-			a | b;
+            a + b;
+            a & b;
+            a | b;
             b + d;
             b & d;
             b | d;
-			a + c;
-			a & c;
-			a | c;
-			b + c;
-			b & c;
-			b | c;
-			a + d;
-			a & d;
-			a | d;
-		}
-        if (gettimeofday(&et, nullptr) != 0) // End measure
+            a + c;
+            a & c;
+            a | c;
+            b + c;
+            b & c;
+            b | c;
+            a + d;
+            a & d;
+            a | d;
+        }
+        if (gettimeofday(&et, NULL) != 0) // End measure
             return FINISH_ERROR;
         // Calculate the time took (and convert to double)
         tv = timeDiffInNano(et, st);
@@ -99,7 +98,7 @@ double osm_function_time(unsigned int iterations)
 
     for (int i = 0; i < iterations; ++i)
     {
-        if (gettimeofday(&st, nullptr) != 0)
+        if (gettimeofday(&st, NULL) != 0)
             return FINISH_ERROR;
         for (j = 0; j < DEFAULT_ITER / 2; ++j)
         {
@@ -116,7 +115,7 @@ double osm_function_time(unsigned int iterations)
             emptyFunc();
             emptyFunc2();
         }
-        if (gettimeofday(&et, nullptr) != 0)
+        if (gettimeofday(&et, NULL) != 0)
             return FINISH_ERROR;
         tv = timeDiffInNano(et, st);
         tv /= DEFAULT_ITER / 2 * 12;
@@ -137,14 +136,14 @@ double osm_syscall_time(unsigned int iterations)
 
     for (int i = 0; i < iterations; ++i)
     {
-        if (gettimeofday(&st, nullptr) != 0)
+        if (gettimeofday(&st, NULL) != 0)
             return FINISH_ERROR;
         OSM_NULLSYSCALL;
         OSM_NULLSYSCALL;
         OSM_NULLSYSCALL;
         OSM_NULLSYSCALL;
         OSM_NULLSYSCALL;
-        if (gettimeofday(&et, nullptr) != 0)
+        if (gettimeofday(&et, NULL) != 0)
             return FINISH_ERROR;
         tv = timeDiffInNano(et, st);
         tv /= 5;
