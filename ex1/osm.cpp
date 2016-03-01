@@ -101,7 +101,7 @@ double osm_function_time(unsigned int iterations)
     {
         if (gettimeofday(&st, nullptr) != 0)
             return FINISH_ERROR;
-        for (j = 0; j < DEFAULT_ITER; ++j)
+        for (j = 0; j < DEFAULT_ITER / 2; ++j)
         {
             emptyFunc();
             emptyFunc2();
@@ -119,7 +119,7 @@ double osm_function_time(unsigned int iterations)
         if (gettimeofday(&et, nullptr) != 0)
             return FINISH_ERROR;
         tv = timeDiffInNano(et, st);
-        tv /= DEFAULT_ITER * 12;
+        tv /= DEFAULT_ITER / 2 * 12;
         total += tv;
     }
     return total / iterations;
