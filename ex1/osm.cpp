@@ -13,6 +13,7 @@
 
 int osm_init()
 {
+
     return FINISH_SUCCESS;
 }
 
@@ -157,28 +158,38 @@ double osm_disk_time(unsigned int iterations)
 
 }
 
+/**
+ * Note that this function allocates memory for the machineName field in the returned struct.
+ * The user of this function SHOULD USE DELETE operation on this field.
+ */
 timeMeasurmentStructure measureTimes(unsigned int operation_iterations,
 									 unsigned int function_iterations,
 									 unsigned int syscall_iterations,
 									 unsigned int disk_iterations)	
 {
-
-
-    double opTime, funcTime, trapTime, diskTime, funcOp, trapOp, diskOp;
-
-    opTime = osm_operation_time(operation_iterations);
-    funcTime = osm_function_time(function_iterations);
-    trapTime = osm_syscall_time(syscall_iterations);
-    diskTime = osm_disk_time(disk_iterations);
-    if (!opTime)
+    timeMeasurmentStructure retVal;
+    // Get host name
+    const int nameMaxLen = 64;
+    retVal.machineName = new char[nameMaxLen];
+    if (gethostname(retVal.machineName, nameMaxLen) != 0)
     {
-        funcOp = trapOp = diskOp = -1;
+        retVal.machineName = '\0';
+    }
+    // Measure times
+    retVal.instructionTimeNanoSecond = osm_operation_time(operation_iterations);
+    retVal.functionTimeNanoSecond = osm_function_time(function_iterations);
+    retVal.trapTimeNanoSecond = osm_syscall_time(syscall_iterations);
+    retVal.diskTimeNanoSecond = osm_disk_time(disk_iterations);
+    if (retVal.instructionTimeNanoSecond == 0)
+    {
+        retVal.functionInstructionRatio = retVal.trapInstructionRatio = \
+                                          retVal.diskInstructionRatio = -1;
     }
     else
     {
-        funcOp = funcTime / opTime;
-        trapOp = trapTime / opTime;
-        diskOp = diskTime / opTime;
+        retVal.functionInstructionRatio = retVal.functionTimeNanoSecond / retVal.instructionTimeNanoSecond;
+        retVal.trapInstructionRatio =  retVal.trapTimeNanoSecond / retVal.instructionTimeNanoSecond;
+        retVal.diskInstructionRatio = retVal.diskTimeNanoSecond / retVal.instructionTimeNanoSecond;
     }
-    timeMeasurmentStructure retVal;
+    return retVal;
 }
