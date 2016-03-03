@@ -28,7 +28,8 @@ static char *gmachineName;
  */
 int osm_init()
 {
-    // Attempt to open/create two files, if one fails the other isn't opened (logical or)
+    // Attempt to open/create two files, if one fails the other isn't opened
+    // (logical or)
     if (((gfd1 = open(FILE_NAME_1, FILE_FLAGS)) == FINISH_ERROR) ||
         ((gfd2 = open(FILE_NAME_2, FILE_FLAGS)) == FINISH_ERROR))
     {
@@ -56,7 +57,8 @@ int osm_finalizer()
         return FINISH_ERROR;
     }
     // Remove files.
-    if ((unlink(FILE_NAME_1) == FINISH_ERROR) | (unlink(FILE_NAME_2) == FINISH_ERROR))
+    if ((unlink(FILE_NAME_1) == FINISH_ERROR) |
+        (unlink(FILE_NAME_2) == FINISH_ERROR))
     {
         return FINISH_ERROR;
     }
@@ -70,12 +72,13 @@ void emptyFunc() {}
 void emptyFunc2() {}
 
 /*
- * Subtracts the second timeval struct from the first to get the difference between
- * them in microseconds, then converts to nano-seconds.
+ * Subtracts the second timeval struct from the first to get the difference
+ * between them in microseconds, then converts to nano-seconds.
  */
 double timeDiffInNano(timeval a, timeval b)
 {
-    return MICRO_TO_NANO(SEC_TO_MICRO(a.tv_sec - b.tv_sec) + a.tv_usec - b.tv_usec);
+    return MICRO_TO_NANO(SEC_TO_MICRO(a.tv_sec - b.tv_sec) \
+                                     + a.tv_usec - b.tv_usec);
 }
 
 /* Time measurement function for a simple arithmetic operation.
@@ -172,8 +175,8 @@ double osm_function_time(unsigned int iterations)
         if (gettimeofday(&et, NULL) != 0)
             return FINISH_ERROR;
         tv = timeDiffInNano(et, st);
-        tv /= DEFAULT_ITER / 2 * 12; // 12 for number of function calls in each iteration,
-                                     // DEFAULT_ITER / 2 iterations
+        tv /= DEFAULT_ITER / 2 * 12; // 12 for number of function calls in each
+                                     // iteration, DEFAULT_ITER / 2 iterations
         total += tv;
     }
     return total / iterations;
@@ -268,7 +271,8 @@ timeMeasurmentStructure measureTimes(unsigned int operation_iterations,
     retVal.machineName = gmachineName;
 
     // Measure times
-    retVal.instructionTimeNanoSecond = osm_operation_time(operation_iterations);
+    retVal.instructionTimeNanoSecond = \
+    osm_operation_time(operation_iterations);
     retVal.functionTimeNanoSecond = osm_function_time(function_iterations);
     retVal.trapTimeNanoSecond = osm_syscall_time(syscall_iterations);
     retVal.diskTimeNanoSecond = osm_disk_time(disk_iterations);
