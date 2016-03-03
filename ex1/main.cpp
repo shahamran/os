@@ -56,6 +56,7 @@ int main()
         else if (buff == "all")
         {
             measuredTime = measureTimes(20000, 20000, 80000, 10000);
+            printStruct(measuredTime);
         }
     }
     if (osm_finalizer() != FINISH_SUCC)

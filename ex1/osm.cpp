@@ -70,8 +70,8 @@ void emptyFunc() {}
 void emptyFunc2() {}
 
 /*
- * Subtracts the second timeval struct from the first to get the difference between them in microseconds,
- * then converts to nano-seconds.
+ * Subtracts the second timeval struct from the first to get the difference between
+ * them in microseconds, then converts to nano-seconds.
  */
 double timeDiffInNano(timeval a, timeval b)
 {
@@ -127,7 +127,8 @@ double osm_operation_time(unsigned int iterations)
             return FINISH_ERROR;
         // Calculate the time took (and convert to double)
         tv = timeDiffInNano(et, st);
-		tv /= DEFAULT_ITER * 15; // 15 is the number of operations in each inner loop iteration
+		tv /= DEFAULT_ITER * 15; // 15 is the number of operations in
+                                 // each inner loop iteration
 		total += tv; // accumulative measured time
 	}
 	return total / iterations; // Average time
@@ -171,7 +172,8 @@ double osm_function_time(unsigned int iterations)
         if (gettimeofday(&et, NULL) != 0)
             return FINISH_ERROR;
         tv = timeDiffInNano(et, st);
-        tv /= DEFAULT_ITER / 2 * 12; // 12 for number of function calls in each iteration, DEFAULT_ITER / 2 iterations
+        tv /= DEFAULT_ITER / 2 * 12; // 12 for number of function calls in each iteration,
+                                     // DEFAULT_ITER / 2 iterations
         total += tv;
     }
     return total / iterations;
@@ -230,6 +232,7 @@ double osm_disk_time(unsigned int iterations)
     {
         if (gettimeofday(&st, NULL) != 0)
             return FINISH_ERROR;
+        // Try to write to both files
         if ((write(gfd1, oneByte, 1) == FINISH_ERROR) ||
                 (write(gfd2, oneByte, 1) == FINISH_ERROR) ||
                 (read(gfd1, oneByte, 1) == FINISH_ERROR) ||
@@ -270,17 +273,22 @@ timeMeasurmentStructure measureTimes(unsigned int operation_iterations,
     retVal.trapTimeNanoSecond = osm_syscall_time(syscall_iterations);
     retVal.diskTimeNanoSecond = osm_disk_time(disk_iterations);
 
-    // If basic op time is 0 for some reason, all ratios are invalid (divided by 0), therefore set to -1
-    if (retVal.instructionTimeNanoSecond == 0 || retVal.instructionTimeNanoSecond == FINISH_ERROR)
+    // If basic op time is 0 for some reason, all ratios are
+    // invalid (divided by 0), therefore set to -1
+    if (retVal.instructionTimeNanoSecond == 0 ||
+        retVal.instructionTimeNanoSecond == FINISH_ERROR)
     {
         retVal.functionInstructionRatio = retVal.trapInstructionRatio = \
                                           retVal.diskInstructionRatio = -1;
     }
     else
     {
-        retVal.functionInstructionRatio = retVal.functionTimeNanoSecond / retVal.instructionTimeNanoSecond;
-        retVal.trapInstructionRatio =  retVal.trapTimeNanoSecond / retVal.instructionTimeNanoSecond;
-        retVal.diskInstructionRatio = retVal.diskTimeNanoSecond / retVal.instructionTimeNanoSecond;
+        retVal.functionInstructionRatio = retVal.functionTimeNanoSecond / \
+        retVal.instructionTimeNanoSecond;
+        retVal.trapInstructionRatio =  retVal.trapTimeNanoSecond / \
+        retVal.instructionTimeNanoSecond;
+        retVal.diskInstructionRatio = retVal.diskTimeNanoSecond / \
+        retVal.instructionTimeNanoSecond;
     }
     return retVal;
 }
