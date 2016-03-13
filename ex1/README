@@ -5,7 +5,71 @@ EX: 1
 FILES:
 README  -- This file
 osm.cpp -- a file with some code
+Makefile -- a makefile that creates the library (make with no arguments, or
+            'all')
+
+NOTES -
+There are A LOT of magic numbers in my code, I'm hoping that you'll believe me
+when I say this is for the sake of accuracy in time measurements and not
+because of laziness or bad coding practice.
 
 TASK 1:
+The program takes an argument. It then creates a directory called 'Welcome',
+inside it it creates another directory called 'To', and inside it creates a
+file name OS with write attributes (open O_CREAT| O_WRONLY).
+It then writes some text to this file
+(prompts us to read the course guidelines).
+I also noticed that the number of bytes written to the file is dependant by
+the length of the arguments I supplied.
+Namely, with 1 letter argument the number of bytes written is 178 and each
+added letter adds another byte. Then, the program closes and deletes the file
+and remove both directories.
+
+I learned it by 'man'ing the sys calls:
+mkdir - creates a directory, returns 0 upon success
+open - opens a file with the attributes set by the flags given and returns a
+file descriptor
+write - writes to a file given by its file descriptor from a given pointer a
+given number of
+bytes.
+close - closes an open file
+unlink - deletes a file (deletes a name from the filesystem?) given by its
+descriptor.
+rmdir - removes an empty directory
 
 TASK 2:
+osm_operation_time - in this function I used loop unrolling to perform a lot
+of basic operations on random numbers (they were randomized before the
+measurement start).
+I then divided by the number of total operations performed, hoping that the
+loop operations weren't significant compared to the operations.
+Note that I didn't assign the result of the operations to a variable so I
+won't count the assignment time, I'm aware this could be problematic - if the
+compiler decides that an unassigned rhs expression should be ignored, couldn't
+think of a better way.
+The loop unrolling, as suggested in the ex description, is to get average time
+bigger than 0 because basic operations are performed quickly.
+
+osm_function_time - I created two empty functions in my cpp file and called
+them one by one a lot of times in each iteration (~500 iterations in each
+main for iteration, in each one of those I made 12 function calls).
+Again, this is to avoid manipulating very small numbers, so i'd get more
+accurate results.
+
+osm_syscall_time - in each iteration I made 5 empty system calls. This is
+much fewer than the ones above because these functions take much longer time
+so the measured numbers will be reasonable to handle.
+
+osm_disk_time - Most of my time was spent HERE. I tried to write and read from
+files that I opened with O_SYNC and O_DIRECT flags to avoid caching and
+buffering. It was very hard since the writing and reading failed - after
+reading a lot about it I figured it's because of alignment issues, couldn't
+understand it, not for a bit.
+So I removed the flags and measured the times without them. I'm aware this
+measurement isn't the best, but it got reasonable results (~900 ns which is
+much higher than all the others) so I left it at that.
+I used two files hoping that accessing them alternatively will prevent the
+disk from optimizing the access to their locations.
+
+Note that the files I handled were created and deleted by the osm_init,
+osm_finalizer functions.

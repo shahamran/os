@@ -1,6 +1,11 @@
 #include <iostream>
 #include <string>
+#include <fcntl.h>
+#include <unistd.h>
 #include "osm.h"
+
+#define FINISH_ERROR -1
+#define FINISH_SUCC 0
 
 void printStruct(const timeMeasurmentStructure& tv)
 {
@@ -16,10 +21,13 @@ void printStruct(const timeMeasurmentStructure& tv)
 
 int main()
 {
+    if (osm_init() != FINISH_SUCC)
+    {
+        return FINISH_ERROR;
+    }
     std::string buff = "";
     double retVal = 0.0;
     timeMeasurmentStructure measuredTime;
-    osm_init();
     while (buff != "exit")
     {
         std::cout << "What to do? (exit/basic/...)" << std::endl;
@@ -38,14 +46,22 @@ int main()
         else if (buff == "trap")
         {
             retVal = osm_syscall_time(80000);
-            std:: cout << "The average trap time measured is: " << retVal << std::endl;
+            std::cout << "The average trap time measured is: " << retVal << std::endl;
+        }
+        else if (buff == "disk")
+        {
+            retVal = osm_disk_time(10000);
+            std::cout << "The average disk time measured is: " << retVal << std::endl;
         }
         else if (buff == "all")
         {
             measuredTime = measureTimes(20000, 20000, 80000, 10000);
-            delete measuredTime.machineName;
+            printStruct(measuredTime);
         }
     }
-    osm_finalizer();
-    return 0;
+    if (osm_finalizer() != FINISH_SUCC)
+    {
+        return FINISH_ERROR;
+    }
+    return FINISH_SUCC;
 }
