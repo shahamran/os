@@ -1,14 +1,147 @@
 #include "uthreads.h"
-#include "uthread.h"  // Note that this is the uthread object class
+#include "uthread.h"            // Note that this is the uthread object class
 #include <sys/time.h>
 #include <csignal>
 #include <csetjmp>
+#include <iostream>
+#include <map>                  // For the threads list
+#include <list>			// For the READY threads list
+#include <algorithm>
 
-#define EXIT_SUCCESS 0
-#define EXIT_FAILURE -1
+#define MAIN_THREAD_ID 0
+#define MAIN_THREAD_FUNC nullptr // Assuming (address_t)nullptr == 0
+#define SAVE_SIGS 1
+#define LONGJMP_VAL 1
+#define SHOULD_WAKE 0
+#define SIG_FLAGS 0
 
-uthread currentThread;
+/* Counts the total number of quanta ran */
+int totalQuanta = 0;
+/* Holds the current running thread's id */
+uthread::id currentThread = MAIN_THREAD_ID;
+/* Holds all threads that were spawned and weren't terminated */
+std::map<uthread::id, uthread*> livingThreads;
+/* Holds all threads in the state READY */
+std::list<uthread::id> readyThreads;
 
+/**
+ * Function: setTimer
+ * Sets the timer to the given quantum_usecs value.
+ * Returns the setitimer function result, i.e. 0 upon success and
+ * negative number upon failure.
+ */
+int setTimer(int quantum_usecs)
+{
+	struct itimerval timer;
+	timer.it_value.tv_sec = 0;
+	timer.it_interval.tv_sec = 0;
+	timer.it_value.tv_usec = quantum_usecs;
+	timer.it_interval.tv_usec = quantum_usecs;
+	return setitimer (ITIMER_VIRTUAL, &timer, NULL);
+}
+
+/**
+ * Function: resetTimer
+ * Resets the timer to 'quantum_usecs'
+ * Returns 0 upon success and -1 upon failure.
+ */
+int resetTimer()
+{
+	struct itimerval timer;
+	// Get the value of the timer from the interval value
+	// (supposed to be initialized with 'quantum_usecs')
+	if (getitimer(ITIMER_VIRTUAL, &timer) < 0)
+	{
+		std::cerr << "getitimer error." << std::endl;
+		return EXIT_FAIL;
+	}
+	timer.it_value.tv_sec = 0;
+	timer.it_interval.tv_sec = 0;
+	timer.it_value.tv_usec = timer.it_interval.tv_usec;
+	
+	// Reset the value of the timer
+	if (setitimer(ITIMER_VIRTUAL, &timer, NULL))
+	{
+		std::cerr << "setitimer error." << std::endl;
+		return EXIT_FAIL;
+	}
+	return EXIT_SUCC;
+}
+
+/**
+ * Function: wakeSleepingThreads
+ * Iterates over all threads alive and wakes them up if needed.
+ * If a thread is awaken it is added to the READY list.
+ */
+void wakeSleepingThreads()
+{
+	uthread *curr;
+	// Add waking threads to READY list
+	for (auto th=livingThreads.cbegin(); th != livingThreads.cend(); ++th)
+	{
+		// curr is the current thread in the for loop
+		curr = th->second;
+		// If the thread is sleeping and it should wake up, wake it up
+		if (curr->get_state() == uthread::state::SLEEPING &&
+		    uthread_get_time_until_wakeup(curr->get_id())==SHOULD_WAKE)
+		{
+			curr->set_state(uthread::state::READY);
+			readyThreads.push_back(curr->get_id());
+		}
+	}
+}
+
+/**
+ * The scheduling function for this library.
+ * In charge of switching between threads, incrementing the quanta count and
+ * maintaining the READY list.
+ * This function returns only when the next thread starts running.
+ */
+void contextSwitch(int)
+{
+	// Useful current thread pointer
+	// everywhere in this function, curr holds a pointer to the currently
+	// discussed thread, and it changes throughout the function.
+	uthread *curr = livingThreads[currentThread];
+
+	// Save current thread's environment
+	int ret_val = sigsetjmp(curr->env, SAVE_SIGS);
+	// If you came here from siglongjmp, go away!
+	if (ret_val == LONGJMP_VAL)
+	{
+		return;
+	}
+
+	// Block SIGTVALRM signal
+	sigset_t set, oldSet;
+	sigemptyset(&set);
+	sigaddset(&set, SIGVTALRM);
+	sigprocmask(SIG_BLOCK, &set, &oldSet);
+	
+	// Increment quanta count
+	++totalQuanta;
+	
+	// Wake sleeping threads
+	wakeSleepingThreads();
+
+	// If the thread stopped because of quantum end,
+	// add it to the READY list
+	if (curr->get_state() == uthread::state::RUNNING)
+	{
+		curr->set_state(uthread::state::READY);
+		readyThreads.push_back(currentThread);
+	}
+
+	// Reset Timer
+	resetTimer();
+
+	// Switch to the next READY thread
+	currentThread = readyThreads.front();
+	readyThreads.pop_front();
+	curr = livingThreads[currentThread];
+	curr->set_state(uthread::state::RUNNING);
+	siglongjmp(curr->env, LONGJMP_VAL);
+}
 
 /*
  * Description: This function initializes the thread library. 
@@ -19,36 +152,46 @@ uthread currentThread;
 */
 int uthread_init(int quantum_usecs)
 {
+	// Block SIGTVALRM signal
+	sigset_t set, oldSet;
+	sigemptyset(&set);
+	sigaddset(&set, SIGVTALRM);
+	sigprocmask(SIG_BLOCK, &set, &oldSet);
+	
 	struct sigaction sa;
-	struct itimerval timer;
 
 	// Make sure the quantum time is positive.	
 	if (quantum_usecs <= 0) 
 	{
-		return EXIT_FAILURE;
+		return EXIT_FAIL;
 	}
 
 	// Set up a the context switch func. as SIGVTALRM handler
 	sa.sa_handler = &contextSwitch;
-	sa.sa_flags = 0;
+	sa.sa_flags = SIG_FLAGS;
 	if (sigaction(SIGVTALRM, &sa, NULL) < 0) {
-		std::cout << "sigaction error." << std::endl;
-		return EXIT_FAILURE;
+		std::cerr << "sigaction error." << std::endl;
+		return EXIT_FAIL;
 	}
 
+	// Create the main thread
+	uthread *mainThread = new uthread(MAIN_THREAD_ID, MAIN_THREAD_FUNC);
+	mainThread->set_state(uthread::state::RUNNING);
+	++totalQuanta;
+	// Add main's id to live threads list (Default == 0).
+	livingThreads.insert(std::make_pair(mainThread->get_id(), mainThread));
+
 	// Set up a timer
-	struct itimerval timer;
-	timer.it_value.tv_sec = 0;
-	timer.it_value.tv_usec = quantum_usecs;
-	timer.it_interval.tv_sec = 0;
-	timer.it_interval.tv_usec = quantum_usecs;
-	if (setitimer (ITIMER_VIRTUAL, &timer, NULL))
+	if (setTimer(quantum_usecs) < 0)
 	{
-		std::cout << "setitimer error." << std::endl;
-		return EXIT_FAILURE; /* If a timer setting failed,
+		std::cerr << "setitimer error." << std::endl;
+		return EXIT_FAIL; /* If a timer setting failed,
 					the function had failed. */
 	}
-	return EXIT_SUCCESS;
+
+	// Unblock SIGVTALRM and return
+	sigprocmask(SIG_SETMASK, &oldSet, NULL);
+	return EXIT_SUCC;
 }
 
 /*
@@ -63,7 +206,31 @@ int uthread_init(int quantum_usecs)
 */
 int uthread_spawn(void (*f)(void))
 {
-	
+	// If the current number of threads is MAX_THREAD_NUM, no
+	// more threads can be spawned.
+	if (livingThreads.size() >= MAX_THREAD_NUM)
+	{
+		return EXIT_FAIL;
+	}
+
+	// Find the smallest id available, starting from MAIN_ID + 1.
+	uthread::id newId = MAIN_THREAD_ID + 1;
+	for (auto it = ++livingThreads.cbegin(); it != livingThreads.cend();
+		       	++it)
+	{
+		if (newId < it->first)
+		{
+			break;
+		}
+		++newId;
+	}
+
+	// Create a fresh thread with the found id and entry func. f
+	// Then put it in the living threads list and READY list.
+	uthread *newThread = new uthread(newId, f);
+	livingThreads.insert(std::make_pair(newId, newThread));
+	readyThreads.push_back(newId);
+	return newId;
 }
 
 
@@ -80,7 +247,34 @@ int uthread_spawn(void (*f)(void))
 */
 int uthread_terminate(int tid)
 {
-	
+	// If main thread is terminated, delete all threads and quit.
+	if (tid == MAIN_THREAD_ID)
+	{
+		for (auto th : livingThreads)
+		{
+			delete th.second;
+		}
+		exit(EXIT_SUCC);
+	}
+	// If no such thread exists, return failure.
+	if (livingThreads.find(tid) == livingThreads.end())
+	{
+		std::cerr << "error terminating thread: " << tid 
+			  << " - no such thread id" << std::endl;
+		return EXIT_FAIL;
+	}
+	// Otherwise, delete thread tid, if it's not sleeping.
+	if (livingThreads[tid]->get_state() == uthread::state::SLEEPING)
+	{
+		std::cerr << "wrong library usage - "
+		       << "can't terminate a sleeping thread" << std::endl;
+		return EXIT_FAIL;
+	}
+	delete livingThreads.find(tid)->second;
+	livingThreads.erase(tid);
+	auto th = std::find(readyThreads.begin(), readyThreads.end(), tid);
+	readyThreads.erase(th);
+	return EXIT_SUCC;
 }
 
 
@@ -95,7 +289,41 @@ int uthread_terminate(int tid)
 */
 int uthread_block(int tid)
 {
-	
+	// Blocking the main thread is an error
+	if (tid == MAIN_THREAD_ID)
+	{
+		std::cerr << "error - can't block main thread" << std::endl;
+		return EXIT_FAIL;
+	}
+	// If no such thread exists, it is an error
+	if (livingThreads.find(tid) == livingThreads.end())
+	{
+		std::cerr << "error blocking thread: " << tid
+			<< " - no such thread id" << std::endl;
+		return EXIT_FAIL;
+	}
+	// Check if the thread CAN be blocked
+	// if not, do nothing.
+	uthread *curr = livingThreads[tid];
+	if (curr->get_state() == uthread::state::BLOCKED ||
+	    curr->get_state() == uthread::state::SLEEPING)
+	{
+		return EXIT_SUCC;
+	}
+	// If a thread blocks itself switch context and exit
+	// (the return will be executed after the thread is resumed)
+	if ((uthread::id)tid == currentThread)
+	{
+		curr->set_state(uthread::state::BLOCKED);
+		contextSwitch(0);
+		return EXIT_SUCC;
+	}
+	// Otherwise, change the thread's state to BLOCKED and remove it
+	// from the READY list.
+	curr->set_state(uthread::state::BLOCKED);
+	auto th = std::find(readyThreads.begin(), readyThreads.end(), tid);
+	readyThreads.erase(th);
+	return EXIT_SUCC;
 }
 
 
@@ -108,7 +336,19 @@ int uthread_block(int tid)
 */
 int uthread_resume(int tid)
 {
-	
+	if (livingThreads.find(tid) == livingThreads.end())
+	{
+		std::cerr << "error resuming thread: " << tid
+			<< " - no such thread id" << std::endl;
+		return EXIT_FAIL;
+	}
+	uthread *curr = livingThreads[tid];
+	if (curr->get_state() == uthread::state::BLOCKED)
+	{
+		curr->set_state(uthread::state::READY);
+		readyThreads.push_back(curr->get_id());
+	}
+	return EXIT_SUCC;
 }
 
 
@@ -122,7 +362,15 @@ int uthread_resume(int tid)
 */
 int uthread_sleep(int num_quantums)
 {
-	
+	if (currentThread == MAIN_THREAD_ID)
+	{
+		// ERRORRR
+	}
+	uthread *curr = livingThreads[currentThread];
+	curr->set_wakeup(totalQuanta + num_quantums);
+	curr->set_state(uthread::state::SLEEPING);
+	contextSwitch(SIGVTALRM);
+	return EXIT_SUCC;
 }
 
 
@@ -133,7 +381,27 @@ int uthread_sleep(int num_quantums)
  * the function should return 0.
  * Return value: Number of quantums (including current quantum) until wakeup.
 */
-int uthread_get_time_until_wakeup(int tid);
+int uthread_get_time_until_wakeup(int tid)
+{
+	// If no such thread exists, this is an error
+	if (livingThreads.find(tid) == livingThreads.end())
+	{
+		//ERRORRR
+		return EXIT_FAIL;
+	}
+	else if (livingThreads[tid]->get_state() != uthread::state::SLEEPING)
+	{
+		// If the thread is not sleeping, return 0.
+		return 0;
+	}
+	else
+	{
+		// In general, diff shouldn't be negative, but if it does
+		// it shouldn't crash the whole program.
+		int diff = livingThreads[tid]->get_wakeup() - totalQuanta;
+		return diff >= 0 ? diff : 0;
+	}
+}
 
 
 /*
@@ -142,7 +410,7 @@ int uthread_get_time_until_wakeup(int tid);
 */
 int uthread_get_tid()
 {
-	
+	return currentThread;
 }
 
 
@@ -156,7 +424,7 @@ int uthread_get_tid()
 */
 int uthread_get_total_quantums()
 {
-	
+	return totalQuanta;
 }
 
 
@@ -171,5 +439,9 @@ int uthread_get_total_quantums()
 */
 int uthread_get_quantums(int tid)
 {
-	
+	if (livingThreads.find(tid) == livingThreads.end())
+	{
+		// ERRRORRR
+	}
+	return livingThreads[tid]->get_runs();
 }

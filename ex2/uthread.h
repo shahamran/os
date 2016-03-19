@@ -1,10 +1,14 @@
-#ifndef  _UTHREAD_H
+#ifndef _UTHREAD_H
 #define _UTHREAD_H
 
 #include "uthreads.h"
 #include <csetjmp>
+#include <csignal>
 
-#ifdef __x86_64__
+#define EXIT_SUCC 0
+#define EXIT_FAIL -1
+
+#ifdef __x86_64__		    	     // ---- BLACK BOX CODE ----
 /* code for 64 bit Intel arch */
 
 typedef unsigned long address_t;
@@ -42,13 +46,11 @@ address_t translate_address(address_t addr)
     return ret;
 }
 
-#endif
+#endif		       			// ---- END OF BLACK BOX CODE ----
 
 /*
- * ==========================================================================
- *        Class:  uthread
- *  Description:  This class represents a thread in the uthreads library
- * ===========================================================================
+ * Class: uthread
+ * This class represents a thread in the uthreads library
  */
 class uthread
 {
@@ -62,11 +64,13 @@ class uthread
 			SLEEPING = 2,
 			BLOCKED = 3
 		};
+		
+		sigjmp_buf env;			/* The thread's context */
 
 		/**
 		 * Method: uthread
-		 * Constructs a new uthread with a given id (def. is main==0)
-		 * and entry function f (def. is ?)
+		 * Constructs a new uthread with a given id 
+		 * and entry function f
 		 */
 		uthread (id tid, func f);
 
@@ -80,19 +84,53 @@ class uthread
 		 * Method: get_id
 		 * Return this thread's id
 		 */
-		id get_id();
+		id get_id() const;
+
 
 		/**
 		 * Method: get_state
 		 * Return this thread's state
 		 */
-		state get_state();
+		state get_state() const;
+		
+		
+		/**
+		 * Method: set_state
+		 * Set this thread's state to a given one
+		 * If the state was changed to RUNNING, returns the number
+		 * of total runs of this thread (including this one).
+		 * Otherwise, reutrns 0.
+		 */
+		int set_state(state newState);
+
+
+		/**
+		 * Method: get_runs
+		 * Get the total number of quanta this thread ran.
+		 */
+		int get_runs() const;
+
+		
+		/**
+		 * Method: get_wakeup
+		 * Get the quantum number in which this thread needs to wake up
+		 */
+		int get_wakeup() const;
+
+
+		/**
+		 * Method: set_wakeup
+		 * Set the quantum number in which this thread needs to wake up
+		 */
+		void set_wakeup(int quantum_num);
+
 	private:
-		sigjmp_buf _env;
-		id _tid;
-		state _state;
-		char _stack[STACK_SIZE];
-		void (*_func)(void)
+		const id _tid; /* Thread ID  */
+		state _state; /* Thread State */
+		char _stack[STACK_SIZE]; /* Thread Stack */
+		int _totalRuns; /* Total num. of quanta ran by this thread */
+		int _wakeUpQuantum; /* The quantum number this thread should 
+				       wake up in */
 		
 }; /* -----  end of class uthread  ----- */
 
