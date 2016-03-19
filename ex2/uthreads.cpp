@@ -23,6 +23,8 @@ uthread::id currentThread = MAIN_THREAD_ID;
 std::map<uthread::id, uthread*> livingThreads;
 /* Holds all threads in the state READY */
 std::list<uthread::id> readyThreads;
+/* Holds the threads that need to be terminated (but couldn't) */
+std::map<uthread::id, uthread*> threadsToDelete;
 
 /**
  * Function: setTimer
@@ -68,6 +70,28 @@ int resetTimer()
 	return EXIT_SUCC;
 }
 
+void deleteThread(uthread::id tid)
+{
+	uthread *curr = livingThreads[tid];
+	livingThreads.erase(tid);
+	auto th = std::find(readyThreads.begin(),
+			    readyThreads.end(), tid);
+	if (th != readyThreads.end())
+	{
+		readyThreads.erase(th);
+	}
+	delete curr;
+	return;
+}
+
+void deleteObsoleteThreads()
+{
+	for (auto th : threadsToDelete)
+	{
+		deleteThread(th.first);	
+	}
+}
+
 /**
  * Function: wakeSleepingThreads
  * Iterates over all threads alive and wakes them up if needed.
@@ -109,6 +133,7 @@ void contextSwitch(int)
 	// If you came here from siglongjmp, go away!
 	if (ret_val == LONGJMP_VAL)
 	{
+		deleteObsoleteThreads();
 		return;
 	}
 
@@ -120,7 +145,7 @@ void contextSwitch(int)
 	
 	// Increment quanta count
 	++totalQuanta;
-	
+
 	// Wake sleeping threads
 	wakeSleepingThreads();
 
@@ -270,11 +295,19 @@ int uthread_terminate(int tid)
 		       << "can't terminate a sleeping thread" << std::endl;
 		return EXIT_FAIL;
 	}
-	delete livingThreads.find(tid)->second;
-	livingThreads.erase(tid);
-	auto th = std::find(readyThreads.begin(), readyThreads.end(), tid);
-	readyThreads.erase(th);
-	return EXIT_SUCC;
+	// If deleted yourself, goto contextSwitch.
+	if ((uthread::id)tid == currentThread)
+	{
+		threadsToDelete.insert(std::make_pair(tid, livingThreads[tid]));
+		contextSwitch(SIGVTALRM);
+		return EXIT_SUCC; // This should not be reached
+	}
+	// Otherwise, delete and return
+	else
+	{
+		deleteThread(tid);
+		return EXIT_SUCC;
+	}
 }
 
 

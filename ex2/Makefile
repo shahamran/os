@@ -3,6 +3,7 @@ CFLAGS = -Wall -Wextra -g -std=c++11 $(INCS)
 RANLIB=ranlib
 
 LIBSRC=uthreads.cpp uthread.cpp
+LIBH=uthreads.h uthread.h
 LIBOBJ=uthreads.o uthread.o
 
 INCS=-I.
@@ -17,7 +18,7 @@ TARGETS = $(UTHREADSLIB)
 TAR=tar
 TARFLAGS=-cvf
 TARNAME=ex2.tar
-TARSRCS=$(LIBSRC) Makefile README
+TARSRCS=$(LIBSRC) $(LIBH) Makefile README
 
 all: $(TARGETS)
 

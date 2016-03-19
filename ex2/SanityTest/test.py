@@ -20,14 +20,14 @@ os.chdir("/tmp/Test")
 files = tarfile.open("ex2.tar")
 files.extractall(path=".", members=None)
 os.system("make")
-os.system("g++ -c test.cpp")
+os.system("g++ -c -g test.cpp")
 
 # incase library was built in c++
-if not os.system("g++ test.o -L. -luthreads -o runtest"):
-	os.system("g++ -D ITSC test.o -L. -luthreads -o runtest")
+if not os.system("g++ test.o -L. libuthreads.a -o runtest"):
+	os.system("g++ -D ITSC test.o -L. libuthreads.a -o runtest")
 
 #library is now linked now just run tests..
-os.system("runtest > output.txt")
+os.system("./runtest > output.txt")
 os.system("diff results.txt output.txt > diff.txt")
 # Check the two outputs
 if os.system("diff results.txt output.txt > diff.txt"):
