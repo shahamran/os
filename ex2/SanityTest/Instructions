@@ -1,0 +1,41 @@
+-----------------------------Sanity Tests------------------------------
+_______________________________________________________________________
+
+
+Put in the same folder you extracted the files into, your ex2.tar
+You should now have in the same folder the following files:
+1. ex2.tar
+2. results.txt
+3. test.cpp
+4. test.py
+
+To run:
+In shell go into the correct path your files are in and run:
+"python3 test.py"
+_______________________________________________________________________
+
+Check the output.txt files (your output)
+and compare it into the results.txt (school's output)
+
+For example if you did not calculate total number of qunatums correctly
+The diff file could contain the following message:
+27c27
+< Total Quantums: 20
+---
+> Total Quantums: 21
+
+For additional information on understanding the output of the 
+diff command check:
+http://www.computerhope.com/unix/udiff.htm
+_______________________________________________________________________
+
+Notes:
+1. Make sure the name of the directory you are in does not contain 
+any space or hebrew letters or it might not compile.
+2. diff.txt could be produced using the shell's diff command.
+_______________________________________________________________________
+
+“Don’t be afraid to be confused. Anything is possible. Stay open, forever.”
+-George Saunders
+
+
