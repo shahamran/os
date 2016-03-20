@@ -1,6 +1,7 @@
 #include <iostream>
 #include "uthreads.h"
 #include <unistd.h>
+#include <string>
 
 #define FINISH_ERROR -1
 #define FINISH_SUCC 0
@@ -13,6 +14,42 @@ void f(void)
 void g(void)
 {
 	while(1);
+}
+
+void getInput()
+{
+	std::string buff;
+	do
+	{
+		std::cout << "Choose action:" << std::endl;
+		std::cin >> buff;
+		if (buff == "spawn")
+		{
+		}
+		else if (buff == "terminate")
+		{
+		}
+		else if (buff == "block")
+		{
+		}
+		else if (buff == "resume")
+		{
+		}
+		else if (buff == "sleep")
+		{
+		}
+		else if (buff == "getid")
+		{
+		}
+		else if (buff == "total")
+		{
+		}
+		else if (buff == "runs")
+		{
+		}
+	}
+	while (buff != "exit");
+	
 }
 
 int main()
