@@ -23,8 +23,9 @@ uthread::id currentThread = MAIN_THREAD_ID;
 std::map<uthread::id, uthread*> livingThreads;
 /* Holds all threads in the state READY */
 std::list<uthread::id> readyThreads;
-/* Holds the threads that need to be terminated (but couldn't) */
-std::map<uthread::id, uthread*> threadsToDelete;
+/* Holds the thread that needs to be deleted but couldn't */
+uthread::id toDelete;
+
 
 /**
  * Function: setTimer
@@ -42,10 +43,12 @@ int setTimer(int quantum_usecs)
 	return setitimer (ITIMER_VIRTUAL, &timer, NULL);
 }
 
+
 /**
  * Function: resetTimer
  * Resets the timer to 'quantum_usecs'
  * Returns 0 upon success and -1 upon failure.
+ * (Assumes current timer interval is set to 'quantum_usecs')
  */
 int resetTimer()
 {
@@ -70,8 +73,21 @@ int resetTimer()
 	return EXIT_SUCC;
 }
 
+
+/**
+ * Function: deleteThread
+ * Deletes a thread from the living threads list, the READY list (if it's
+ * there) and frees its allocated memory.
+ * Assumes the given tid exists in the living threads list.
+ * Calling with tid == MAIN_THREAD_ID does nothing.
+ * DO NOT CALL WITH UNEXISTING THREAD ID
+ */
 void deleteThread(uthread::id tid)
 {
+	if (tid == MAIN_THREAD_ID)
+	{
+		return;
+	}	
 	uthread *curr = livingThreads[tid];
 	livingThreads.erase(tid);
 	auto th = std::find(readyThreads.begin(),
@@ -84,13 +100,6 @@ void deleteThread(uthread::id tid)
 	return;
 }
 
-void deleteObsoleteThreads()
-{
-	for (auto th : threadsToDelete)
-	{
-		deleteThread(th.first);	
-	}
-}
 
 /**
  * Function: wakeSleepingThreads
@@ -115,6 +124,7 @@ void wakeSleepingThreads()
 	}
 }
 
+
 /**
  * The scheduling function for this library.
  * In charge of switching between threads, incrementing the quanta count and
@@ -133,7 +143,10 @@ void contextSwitch(int)
 	// If you came here from siglongjmp, go away!
 	if (ret_val == LONGJMP_VAL)
 	{
-		deleteObsoleteThreads();
+		// If the last thread tried to terminate itself,
+		// Finish the job. Now.
+		deleteThread(toDelete);
+		toDelete = MAIN_THREAD_ID;
 		return;
 	}
 
@@ -165,8 +178,11 @@ void contextSwitch(int)
 	readyThreads.pop_front();
 	curr = livingThreads[currentThread];
 	curr->set_state(uthread::state::RUNNING);
+	// Note that the saved env for each thread does not block
+	// SIGVTALRM, therefore no signal unblocking is needed here.
 	siglongjmp(curr->env, LONGJMP_VAL);
 }
+
 
 /*
  * Description: This function initializes the thread library. 
@@ -219,6 +235,7 @@ int uthread_init(int quantum_usecs)
 	return EXIT_SUCC;
 }
 
+
 /*
  * Description: This function creates a new thread, whose entry point is the
  * function f with the signature void f(void). The thread is added to the end
@@ -240,17 +257,19 @@ int uthread_spawn(void (*f)(void))
 
 	// Find the smallest id available, starting from MAIN_ID + 1.
 	uthread::id newId = MAIN_THREAD_ID + 1;
-	for (auto it = ++livingThreads.cbegin(); it != livingThreads.cend();
-		       	++it)
+	for (auto it = ++livingThreads.cbegin(); /* start from the second */
+		  it != livingThreads.cend();
+		++it)
 	{
-		if (newId < it->first)
+		if (newId++ < it->first)
 		{
+			// If the threads ids numbering doesn't match natural
+			// incremental numbering, we found an empty spot.
 			break;
 		}
-		++newId;
 	}
 
-	// Create a fresh thread with the found id and entry func. f
+	// Create a fresh thread with the found id and entry function f
 	// Then put it in the living threads list and READY list.
 	uthread *newThread = new uthread(newId, f);
 	livingThreads.insert(std::make_pair(newId, newThread));
@@ -273,6 +292,8 @@ int uthread_spawn(void (*f)(void))
 int uthread_terminate(int tid)
 {
 	// If main thread is terminated, delete all threads and quit.
+	// The deleteThread function checks and manages data for future
+	// process run, which is un-needed in this point.
 	if (tid == MAIN_THREAD_ID)
 	{
 		for (auto th : livingThreads)
@@ -298,7 +319,8 @@ int uthread_terminate(int tid)
 	// If deleted yourself, goto contextSwitch.
 	if ((uthread::id)tid == currentThread)
 	{
-		threadsToDelete.insert(std::make_pair(tid, livingThreads[tid]));
+		toDelete = tid;
+//		threadsToDelete.insert(std::make_pair(tid, livingThreads[tid]));
 		contextSwitch(SIGVTALRM);
 		return EXIT_SUCC; // This should not be reached
 	}

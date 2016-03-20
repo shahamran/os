@@ -1,46 +1,57 @@
+# In my machine, g++ is not the default CC, so I define it explicitly.
 CC=g++
-CFLAGS = -Wall -Wextra -g -std=c++11 $(INCS)
-RANLIB=ranlib
+CFLAGS=-Wall -Wextra -g -std=c++11 $(INCS)
+
+INCS=-I.
+LOADLIBES=-L./
 
 LIBSRC=uthreads.cpp uthread.cpp
 LIBH=uthreads.h uthread.h
 LIBOBJ=uthreads.o uthread.o
+RANLIB=ranlib
 
-INCS=-I.
-LOADLIBES = -L./
-
+# cpp to object files rule
 %.o: %.cpp
 	$(CC) $(CFLAGS) -c $<
 
-UTHREADSLIB = libuthreads.a
-TARGETS = $(UTHREADSLIB)
-
-TAR=tar
-TARFLAGS=-cvf
-TARNAME=ex2.tar
-TARSRCS=$(LIBSRC) $(LIBH) Makefile README
+UTHREADSLIB=libuthreads.a
+TARGETS=$(UTHREADSLIB)
 
 all: $(TARGETS)
 
-TEST_FILE=main.cpp
-TEST_OBJ=test
-
-$(TEST_OBJ): $(UTHREADSLIB)
-	$(CC) $(CFLAGS) $(TEST_FILE) $(UTHREADSLIB) -o $@
-
+# library rule
 $(TARGETS): $(LIBOBJ)
 	$(AR) $(ARFLAGS) $@ $^
 	$(RANLIB) $@
 
-RM=rm -fv
 
+# test rules
+TEST_FILE=main.cpp
+TEST_OBJ=test
+VALGRIND_FLAGS = --leak-check=full --show-possibly-lost=yes \
+		 --show-reachable=yes --undef-value-errors=yes
+
+$(TEST_OBJ): $(UTHREADSLIB)
+	$(CC) $(CFLAGS) $(TEST_FILE) $(UTHREADSLIB) -o $@
+
+ValgrindTest: $(TEST_OBJ)
+	valgrind $(VALGRIND_FLAGS) ./$<
+
+# cleaning and such
+RM=rm -fv
 clean:
 	$(RM) $(TARGETS) $(UTHREADSLIB) $(OBJ) $(LIBOBJ) *~ *core $(TEST_OBJ)
 
 depend:
 	makedepend -- $(CFLAGS) -- $(SRC) $(LIBSRC)
 
+# tar rule
+TAR=tar
+TARFLAGS=-cvf
+TARNAME=ex2.tar
+TARSRCS=$(LIBSRC) $(LIBH) Makefile README
+
 tar:
 	$(TAR) $(TARFLAGS) $(TARNAME) $(TARSRCS)
 
-.PHONY: all clean tar
+.PHONY: all clean tar ValgrindTest
