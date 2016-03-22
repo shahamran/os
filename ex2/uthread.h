@@ -5,6 +5,8 @@
 #include <csetjmp>
 #include <csignal>
 
+// This is defined here so it could be used in both uthread and uthreads cpp
+// files, and not only the uthreads.cpp
 #define EXIT_SUCC 0
 #define EXIT_FAIL -1
 
@@ -61,7 +63,7 @@ class uthread
 		 * of total runs of this thread (including this one).
 		 * Otherwise, reutrns 0.
 		 */
-		int set_state(state newState);
+		void set_state(state newState);
 
 
 		/**
