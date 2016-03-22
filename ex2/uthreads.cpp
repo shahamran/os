@@ -37,7 +37,6 @@ std::list<uthread::id> readyThreads;
 /* Holds the thread that needs to be deleted but couldn't */
 uthread::id toDelete;
 
-// ====== library implementation ======
 
 // ====== helper functions ======
 
@@ -45,6 +44,8 @@ uthread::id toDelete;
 /**
  * Function: stopTimer
  * Stops the timer that is currently running to stop SIGVTALRM
+ * Saves the old timer's interval data. i.e. the new timer that is set has
+ * the values 0 in the it_value struct, and the old it_interval values.
  */
 void stopTimer()
 {
@@ -88,7 +89,6 @@ int setTimer(int quantum_usecs)
 /**
  * Function: resetTimer
  * Resets the timer to 'quantum_usecs'
- * Returns 0 upon success and -1 upon failure.
  * (Assumes current timer interval is set to 'quantum_usecs')
  */
 void resetTimer()
@@ -172,6 +172,7 @@ void wakeSleepingThreads()
 
 /**
  * The scheduling function for this library.
+ * This function is the handler for SIGVTALRM signal.
  * In charge of switching between threads, incrementing the quanta count and
  * maintaining the READY list.
  * This function returns only when the next thread starts running.
@@ -228,6 +229,8 @@ void contextSwitch(int)
 	siglongjmp(curr->env, LONGJMP_VAL);
 }
 
+
+// ====== library functions implementation ======
 
 /*
  * Description: This function initializes the thread library. 
