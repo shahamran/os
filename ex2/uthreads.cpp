@@ -43,6 +43,32 @@ uthread::id toDelete;
 
 
 /**
+ * Function: stopTimer
+ * Stops the timer that is currently running to stop SIGVTALRM
+ */
+void stopTimer()
+{
+	struct itimerval timer, oldTimer;
+	// Get the old timer interval data
+	if (getitimer (ITIMER_VIRTUAL, &oldTimer) < 0)
+	{
+		std::cerr << SYS_ERROR_MSG 
+			  << "getitimer failed." << std::endl;
+		exit(SYSTEM_ERROR);
+	}
+	// Set the value to zero to stop it
+	timer.it_value.tv_sec = timer.it_value.tv_usec = 0;
+	// Set the interval to the same as before.
+	timer.it_interval.tv_sec = oldTimer.it_interval.tv_sec;
+	timer.it_interval.tv_usec = oldTimer.it_interval.tv_usec;
+	if (setitimer (ITIMER_VIRTUAL, &timer, NULL) < 0)
+	{
+		std::cerr << SYS_ERROR_MSG << "setitimer failed." << std::endl;
+		exit(SYSTEM_ERROR);
+	}
+}
+
+/**
  * Function: setTimer
  * Sets the timer to the given quantum_usecs value.
  * Returns the setitimer function result, i.e. 0 upon success and
@@ -65,7 +91,7 @@ int setTimer(int quantum_usecs)
  * Returns 0 upon success and -1 upon failure.
  * (Assumes current timer interval is set to 'quantum_usecs')
  */
-int resetTimer()
+void resetTimer()
 {
 	struct itimerval timer;
 	// Get the value of the timer from the interval value
@@ -74,20 +100,19 @@ int resetTimer()
 	{
 		std::cerr << SYS_ERROR_MSG 
 			  << "getitimer failed." << std::endl;
-		return EXIT_FAIL;
+		exit(SYSTEM_ERROR);
 	}
 	// Set the correct values to the ititmerval struct
 	timer.it_value.tv_sec = timer.it_interval.tv_sec;
 	timer.it_value.tv_usec = timer.it_interval.tv_usec;
 	
 	// Reset the value of the timer
-	if (setitimer(ITIMER_VIRTUAL, &timer, NULL))
+	if (setitimer(ITIMER_VIRTUAL, &timer, NULL) < 0)
 	{
 		std::cerr << SYS_ERROR_MSG 
 			  << "setitimer failed." << std::endl;
-		return EXIT_FAIL;
+		exit(SYSTEM_ERROR);
 	}
-	return EXIT_SUCC;
 }
 
 
@@ -150,9 +175,16 @@ void wakeSleepingThreads()
  * In charge of switching between threads, incrementing the quanta count and
  * maintaining the READY list.
  * This function returns only when the next thread starts running.
+ * Note that SIGVTALRM is blocked by default since this is its handler.
  */
 void contextSwitch(int)
 {
+	// Stop the timer to prevent SIGVRALRM aggregation - i.e. if this
+	// func. is reached before the timer ended, we don't want the timer
+	// to send another signal (which will be blocked) while in this
+	// function.
+	stopTimer();
+
 	// Useful current thread pointer
 	// everywhere in this function, curr holds a pointer to the currently
 	// discussed thread, and it changes throughout the function.
@@ -170,27 +202,6 @@ void contextSwitch(int)
 		return;
 	}
 
-	// Block SIGTVALRM signal
-	sigset_t set, oldSet;
-	 if (sigemptyset(&set) < 0)
-	{
-		std::cerr << SYS_ERROR_MSG
-			  << "sigemptyset failed." << std::endl;
-		exit(SYSTEM_ERROR);
-	}
-	if (sigaddset(&set, SIGVTALRM) < 0)
-	{
-		std::cerr << SYS_ERROR_MSG
-			  << "sigaddset failed." << std::endl;
-		exit(SYSTEM_ERROR);
-	}
-	if (sigprocmask(SIG_BLOCK, &set, &oldSet) < 0)
-	{
-		std::cerr << SYS_ERROR_MSG
-			  << "sigprocmask failed." << std::endl;
-		exit(SYSTEM_ERROR);
-	}
-	
 	// Increment quanta count
 	++totalQuanta;
 
@@ -205,16 +216,15 @@ void contextSwitch(int)
 		readyThreads.push_back(currentThread);
 	}
 
-	// Reset Timer
-	resetTimer();
-
 	// Switch to the next READY thread
 	currentThread = readyThreads.front();
 	readyThreads.pop_front();
 	curr = livingThreads[currentThread];
 	curr->set_state(uthread::state::RUNNING);
-	// Note that the saved env for each thread does not block
-	// SIGVTALRM, therefore no signal unblocking is needed here.
+	
+	// Reset Timer
+	resetTimer();
+	// Go to next thread.
 	siglongjmp(curr->env, LONGJMP_VAL);
 }
 
