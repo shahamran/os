@@ -9,6 +9,7 @@
 // files, and not only the uthreads.cpp
 #define EXIT_SUCC 0
 #define EXIT_FAIL -1
+#define SYSTEM_ERROR 1
 
 /*
  * Class: uthread

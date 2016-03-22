@@ -16,9 +16,10 @@
 #define LONGJMP_VAL 1
 #define SHOULD_WAKE 0
 #define SIG_FLAGS 0
-#define SYS_ERROR_MSG "system error: "
-#define LIB_ERROR_MSG "thread library error: "
-#define SYSTEM_ERROR 1
+#define SECOND 1000000
+
+const char * SYS_ERROR_MSG = "system error: ",
+	   * LIB_ERROR_MSG = "thread library error: ";
 
 // ====== global variables ======
 /* Counts the total number of quanta ran */
@@ -50,10 +51,10 @@ uthread::id toDelete;
 int setTimer(int quantum_usecs)
 {
 	struct itimerval timer;
-	timer.it_value.tv_sec = 0;
-	timer.it_interval.tv_sec = 0;
-	timer.it_value.tv_usec = quantum_usecs;
-	timer.it_interval.tv_usec = quantum_usecs;
+	timer.it_value.tv_sec = timer.it_interval.tv_sec
+			      = quantum_usecs / SECOND;
+	timer.it_value.tv_usec = timer.it_interval.tv_usec
+			       = quantum_usecs % SECOND;
 	return setitimer (ITIMER_VIRTUAL, &timer, NULL);
 }
 
@@ -76,8 +77,7 @@ int resetTimer()
 		return EXIT_FAIL;
 	}
 	// Set the correct values to the ititmerval struct
-	timer.it_value.tv_sec = 0;
-	timer.it_interval.tv_sec = 0;
+	timer.it_value.tv_sec = timer.it_interval.tv_sec;
 	timer.it_value.tv_usec = timer.it_interval.tv_usec;
 	
 	// Reset the value of the timer
@@ -278,7 +278,7 @@ int uthread_init(int quantum_usecs)
 	// Set up a timer
 	if (setTimer(quantum_usecs) < 0)
 	{
-		std::cerr << SYS_ERROR_MSG << "setitimer failed. << std::endl;
+		std::cerr << SYS_ERROR_MSG << "setitimer failed." << std::endl;
 		exit(SYSTEM_ERROR);
 	}
 
@@ -286,7 +286,7 @@ int uthread_init(int quantum_usecs)
 	if (sigprocmask(SIG_SETMASK, &oldSet, NULL) < 0)
 	{
 		std::cerr << SYS_ERROR_MSG 
-			  << "sigprocmask failed. << std::endl;
+			  << "sigprocmask failed." << std::endl;
 		exit(SYSTEM_ERROR);
 	}
 	return EXIT_SUCC;
@@ -320,12 +320,13 @@ int uthread_spawn(void (*f)(void))
 		  it != livingThreads.cend();
 		++it)
 	{
-		if (newId++ < it->first)
+		if (newId < it->first)
 		{
 			// If the threads ids numbering doesn't match natural
 			// incremental numbering, we found an empty spot.
 			break;
 		}
+		++newId;
 	}
 
 	// Create a fresh thread with the found id and entry function f
