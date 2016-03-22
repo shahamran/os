@@ -18,10 +18,11 @@
 #define SIG_FLAGS 0
 #define SECOND 1000000
 
+
+// ====== global variables ======
 const char * SYS_ERROR_MSG = "system error: ",
 	   * LIB_ERROR_MSG = "thread library error: ";
 
-// ====== global variables ======
 /* Counts the total number of quanta ran */
 int totalQuanta = 0;
 
@@ -39,13 +40,11 @@ uthread::id toDelete;
 
 
 // ====== helper functions ======
-
-
 /**
  * Function: stopTimer
  * Stops the timer that is currently running to stop SIGVTALRM
  * Saves the old timer's interval data. i.e. the new timer that is set has
- * the values 0 in the it_value struct, and the old it_interval values.
+ * the values 0 in its it_value struct, and the old it_interval values.
  */
 void stopTimer()
 {
@@ -105,7 +104,6 @@ void resetTimer()
 	// Set the correct values to the ititmerval struct
 	timer.it_value.tv_sec = timer.it_interval.tv_sec;
 	timer.it_value.tv_usec = timer.it_interval.tv_usec;
-	
 	// Reset the value of the timer
 	if (setitimer(ITIMER_VIRTUAL, &timer, NULL) < 0)
 	{
@@ -142,7 +140,6 @@ void deleteThread(uthread::id tid)
 	}
 	// Free allocated data
 	delete curr;
-	return;
 }
 
 
@@ -171,6 +168,7 @@ void wakeSleepingThreads()
 
 
 /**
+ * Function: contextSwitch
  * The scheduling function for this library.
  * This function is the handler for SIGVTALRM signal.
  * In charge of switching between threads, incrementing the quanta count and
@@ -203,10 +201,8 @@ void contextSwitch(int)
 		return;
 	}
 
-	// Increment quanta count
+	// Self explanatory
 	++totalQuanta;
-
-	// Wake sleeping threads
 	wakeSleepingThreads();
 
 	// If the thread stopped because of quantum end,
@@ -430,7 +426,7 @@ int uthread_block(int tid)
 	if (livingThreads.find(tid) == livingThreads.end())
 	{
 		std::cerr << LIB_ERROR_MSG << "block(" << tid
-			<< ") failed - no such thread id" << std::endl;
+			  << ") failed - no such thread id" << std::endl;
 		return EXIT_FAIL;
 	}
 	// Check if the thread CAN be blocked
@@ -443,10 +439,10 @@ int uthread_block(int tid)
 	}
 	// If a thread blocks itself switch context and exit
 	// (the return will be executed after the thread is resumed)
-	if ((uthread::id)tid == currentThread)
+	else if ((uthread::id)tid == currentThread)
 	{
 		curr->set_state(uthread::state::BLOCKED);
-		contextSwitch(0);
+		contextSwitch(SIGVTALRM);
 		return EXIT_SUCC;
 	}
 	// Otherwise, change the thread's state to BLOCKED and remove it
