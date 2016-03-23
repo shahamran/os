@@ -1,18 +1,18 @@
-# In my machine, g++ is not the default CC, so I define it explicitly.
-CC=g++
-CFLAGS=-Wall -Wextra -g -std=c++11 $(INCS)
+CFLAGS=-Wall -g -std=c++11 $(INCS)
 
+# cpp to object files rule
+%.o: %.cpp
+	$(CXX) $(CFLAGS) -c $<
+
+# Library Stuff
 INCS=-I.
 LOADLIBES=-L./
 
 LIBSRC=uthreads.cpp uthread.cpp
-LIBH=uthreads.h uthread.h
+LIBH=uthread.h uthreads.h
 LIBOBJ=uthreads.o uthread.o
+ARFLAGS=rvs
 RANLIB=ranlib
-
-# cpp to object files rule
-%.o: %.cpp
-	$(CC) $(CFLAGS) -c $<
 
 UTHREADSLIB=libuthreads.a
 TARGETS=$(UTHREADSLIB)
