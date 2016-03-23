@@ -9,14 +9,15 @@ import filecmp
 # use make file to compile to library
 
 # Create new file and put files in them
-os.system("mkdir /tmp/Test")
-os.system("cp ex2.tar /tmp/Test")
-os.system("cp test.cpp /tmp/Test")
-os.system("cp results.txt /tmp/Test")
+os.system("mkdir /tmp/ransha")
+os.system("mkdir /tmp/ransha/Test")
+os.system("cp ex2.tar /tmp/ransha/Test")
+os.system("cp test.cpp /tmp/ransha/Test")
+os.system("cp results.txt /tmp/ransha/Test")
 
 
 curFolder = os.path.dirname(os.path.realpath(__file__))
-os.chdir("/tmp/Test")
+os.chdir("/tmp/ransha/Test")
 files = tarfile.open("ex2.tar")
 files.extractall(path=".", members=None)
 os.system("make")
@@ -39,7 +40,7 @@ else:
 
 files.close()
 os.chdir(curFolder)
-os.system("rm -rf /tmp/Test")
+os.system("rm -rf /tmp/ransha/Test")
 print("End Script")
 
 
