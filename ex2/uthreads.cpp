@@ -653,7 +653,8 @@ int uthread_get_total_quantums()
  * increase this value by 1 (so if the thread with ID tid is in RUNNING state
  * when this function is called, include also the current quantum). If no
  * thread with ID tid exists it is considered as an error.
- * Return value: On success, return the number of quantums of the thread with ID tid. On failure, return -1.
+ * Return value: On success, return the number of quantums of the thread with 
+ * ID tid. On failure, return -1.
 */
 int uthread_get_quantums(int tid)
 {
