@@ -115,6 +115,55 @@ void resetTimer()
 
 
 /**
+ * Function: blockSignal
+ * Blocks a given signal (given by int). Saves the old signal set to the
+ * given set pointer.
+ * If one of the signal library functions fail, this function prints an
+ * error message and exits.
+ */
+void blockSignal(int signum, sigset_t *oldSet)
+{
+	sigset_t set;
+	 if (sigemptyset(&set) < 0)
+	{
+		std::cerr << SYS_ERROR_MSG
+			  << "sigemptyset failed." << std::endl;
+		exit(SYSTEM_ERROR);
+	}
+	if (sigaddset(&set, signum) < 0)
+	{
+		std::cerr << SYS_ERROR_MSG
+			  << "sigaddset failed." << std::endl;
+		exit(SYSTEM_ERROR);
+	}
+	if (sigprocmask(SIG_BLOCK, &set, oldSet) < 0)
+	{
+		std::cerr << SYS_ERROR_MSG
+			  << "sigprocmask failed." << std::endl;
+		exit(SYSTEM_ERROR);
+	}
+}
+
+
+/**
+ * Function: resetSigMask
+ * Sets the signal mask to the given signal set.
+ * If sigprocmask function fails, this function prints an error message and
+ * exits the program.
+ */
+void resetSigMask(const sigset_t *set)
+{
+	if (sigprocmask(SIG_SETMASK, set, NULL) < 0)
+	{
+		std::cerr << SYS_ERROR_MSG 
+			  << "sigprocmask failed." << std::endl;
+		exit(SYSTEM_ERROR);
+	}
+	
+}
+
+
+/**
  * Function: deleteThread
  * Deletes a thread from the living threads list, the READY list (if it's
  * there) and frees its allocated memory.
@@ -124,8 +173,14 @@ void resetTimer()
  */
 void deleteThread(uthread::id tid)
 {
+	// Block SIGVTALRM
+	sigset_t oldSet;
+	blockSignal(SIGVTALRM, &oldSet);
+
 	if (tid == MAIN_THREAD_ID)
 	{
+		// Unblock and exit
+		resetSigMask(&oldSet);
 		return;
 	}	
 	uthread *curr = livingThreads[tid];
@@ -140,6 +195,9 @@ void deleteThread(uthread::id tid)
 	}
 	// Free allocated data
 	delete curr;
+
+	// Unlblock signal
+	resetSigMask(&oldSet);
 }
 
 
@@ -237,27 +295,7 @@ void contextSwitch(int)
 */
 int uthread_init(int quantum_usecs)
 {
-	// Block SIGTVALRM signal
-	sigset_t set, oldSet;
-	 if (sigemptyset(&set) < 0)
-	{
-		std::cerr << SYS_ERROR_MSG
-			  << "sigemptyset failed." << std::endl;
-		exit(SYSTEM_ERROR);
-	}
-	if (sigaddset(&set, SIGVTALRM) < 0)
-	{
-		std::cerr << SYS_ERROR_MSG
-			  << "sigaddset failed." << std::endl;
-		exit(SYSTEM_ERROR);
-	}
-	if (sigprocmask(SIG_BLOCK, &set, &oldSet) < 0)
-	{
-		std::cerr << SYS_ERROR_MSG
-			  << "sigprocmask failed." << std::endl;
-		exit(SYSTEM_ERROR);
-	}
-	
+
 	struct sigaction sa;
 
 	// Make sure the quantum time is positive.	
@@ -267,6 +305,10 @@ int uthread_init(int quantum_usecs)
 			  << "must be positive" << std::endl;
 		return EXIT_FAIL;
 	}
+
+	// Block SIGTVALRM signal
+	sigset_t oldSet;
+	blockSignal(SIGVTALRM, &oldSet);
 
 	// Set up a the context switch func. as SIGVTALRM handler
 	sa.sa_handler = &contextSwitch;
@@ -292,12 +334,7 @@ int uthread_init(int quantum_usecs)
 	}
 
 	// Unblock SIGVTALRM and return
-	if (sigprocmask(SIG_SETMASK, &oldSet, NULL) < 0)
-	{
-		std::cerr << SYS_ERROR_MSG 
-			  << "sigprocmask failed." << std::endl;
-		exit(SYSTEM_ERROR);
-	}
+	resetSigMask(&oldSet);
 	return EXIT_SUCC;
 }
 
@@ -323,6 +360,10 @@ int uthread_spawn(void (*f)(void))
 		return EXIT_FAIL;
 	}
 
+	// Block SIGTVALRM signal
+	sigset_t oldSet;
+	blockSignal(SIGVTALRM, &oldSet);
+
 	// Find the smallest id available, starting from MAIN_ID + 1.
 	uthread::id newId = MAIN_THREAD_ID + 1;
 	for (auto it = ++livingThreads.cbegin(); /* start from the second */
@@ -343,6 +384,9 @@ int uthread_spawn(void (*f)(void))
 	uthread *newThread = new uthread(newId, f);
 	livingThreads.insert(std::make_pair(newId, newThread));
 	readyThreads.push_back(newId);
+
+	// Unblock SIGVTALRM and return
+	resetSigMask(&oldSet);
 	return newId;
 }
 
@@ -360,6 +404,10 @@ int uthread_spawn(void (*f)(void))
 */
 int uthread_terminate(int tid)
 {
+	// Block SIGTVALRM signal
+	sigset_t oldSet;
+	blockSignal(SIGVTALRM, &oldSet);
+
 	// If main thread is terminated, delete all threads and quit.
 	// The deleteThread function checks and manages data for future
 	// process run, which is un-needed in this point.
@@ -376,6 +424,7 @@ int uthread_terminate(int tid)
 	{
 		std::cerr << LIB_ERROR_MSG <<"terminate(" << tid 
 			  << ") failed - no such thread id" << std::endl;
+		resetSigMask(&oldSet);
 		return EXIT_FAIL;
 	}
 
@@ -384,6 +433,7 @@ int uthread_terminate(int tid)
 	{
 		std::cerr << LIB_ERROR_MSG
 		          << "can't terminate a sleeping thread" << std::endl;
+		resetSigMask(&oldSet);
 		return EXIT_FAIL;
 	}
 	// If deleted yourself, goto contextSwitch.
@@ -392,12 +442,15 @@ int uthread_terminate(int tid)
 		// Set this tid as the one that needs to be deleted
 		// in the next contextSwitch
 		toDelete = tid;
+		resetSigMask(&oldSet);
 		contextSwitch(SIGVTALRM);
 		return EXIT_SUCC; // This should not be reached
 	}
 	// Otherwise, delete and return
 	else
 	{
+		// Unblock SIGVTALRM and return
+		resetSigMask(&oldSet);
 		deleteThread(tid);
 		return EXIT_SUCC;
 	}
@@ -415,11 +468,16 @@ int uthread_terminate(int tid)
 */
 int uthread_block(int tid)
 {
+	// Block SIGTVALRM signal
+	sigset_t oldSet;
+	blockSignal(SIGVTALRM, &oldSet);
+
 	// Blocking the main thread is an error
 	if (tid == MAIN_THREAD_ID)
 	{
 		std::cerr << LIB_ERROR_MSG << "can't block main thread." 
 			  << std::endl;
+		resetSigMask(&oldSet);
 		return EXIT_FAIL;
 	}
 	// If no such thread exists, it is an error
@@ -427,6 +485,7 @@ int uthread_block(int tid)
 	{
 		std::cerr << LIB_ERROR_MSG << "block(" << tid
 			  << ") failed - no such thread id" << std::endl;
+		resetSigMask(&oldSet);
 		return EXIT_FAIL;
 	}
 	// Check if the thread CAN be blocked
@@ -435,13 +494,16 @@ int uthread_block(int tid)
 	if (curr->get_state() == uthread::state::BLOCKED ||
 	    curr->get_state() == uthread::state::SLEEPING)
 	{
+		resetSigMask(&oldSet);
 		return EXIT_SUCC;
 	}
+
 	// If a thread blocks itself switch context and exit
 	// (the return will be executed after the thread is resumed)
 	else if ((uthread::id)tid == currentThread)
 	{
 		curr->set_state(uthread::state::BLOCKED);
+		resetSigMask(&oldSet);
 		contextSwitch(SIGVTALRM);
 		return EXIT_SUCC;
 	}
@@ -450,6 +512,7 @@ int uthread_block(int tid)
 	curr->set_state(uthread::state::BLOCKED);
 	auto th = std::find(readyThreads.begin(), readyThreads.end(), tid);
 	readyThreads.erase(th);
+	resetSigMask(&oldSet);
 	return EXIT_SUCC;
 }
 
@@ -463,18 +526,27 @@ int uthread_block(int tid)
 */
 int uthread_resume(int tid)
 {
+	// Block SIGTVALRM signal
+	sigset_t oldSet;
+	blockSignal(SIGVTALRM, &oldSet);
+
 	if (livingThreads.find(tid) == livingThreads.end())
 	{
 		std::cerr << LIB_ERROR_MSG << "resume(" << tid
 			<< ") failed - no such thread id" << std::endl;
+		resetSigMask(&oldSet);
 		return EXIT_FAIL;
 	}
+
 	uthread *curr = livingThreads[tid];
 	if (curr->get_state() == uthread::state::BLOCKED)
 	{
 		curr->set_state(uthread::state::READY);
 		readyThreads.push_back(curr->get_id());
 	}
+
+	// Unblock SIGVTALRM and return
+	resetSigMask(&oldSet);
 	return EXIT_SUCC;
 }
 
@@ -489,16 +561,25 @@ int uthread_resume(int tid)
 */
 int uthread_sleep(int num_quantums)
 {
+	// Block SIGTVALRM signal
+	sigset_t oldSet;
+	blockSignal(SIGVTALRM, &oldSet);
+
 	if (currentThread == MAIN_THREAD_ID)
 	{
 		std::cerr << LIB_ERROR_MSG << "can't put main thread to sleep"
 			  << std::endl;
+		resetSigMask(&oldSet);
 		return EXIT_FAIL;
 	}
+
 	uthread *curr = livingThreads[currentThread];
 	curr->set_wakeup(totalQuanta + num_quantums);
 	curr->set_state(uthread::state::SLEEPING);
 	contextSwitch(SIGVTALRM);
+
+	// Unblock SIGVTALRM and return
+	resetSigMask(&oldSet);
 	return EXIT_SUCC;
 }
 
@@ -512,16 +593,22 @@ int uthread_sleep(int num_quantums)
 */
 int uthread_get_time_until_wakeup(int tid)
 {
+	// Block SIGTVALRM signal
+	sigset_t oldSet;
+	blockSignal(SIGVTALRM, &oldSet);
+
 	// If no such thread exists, this is an error
 	if (livingThreads.find(tid) == livingThreads.end())
 	{
 		std::cerr << LIB_ERROR_MSG << "wakeup(" << tid
 			  << ") failed - no such thread id. " << std::endl;
+		resetSigMask(&oldSet);
 		return EXIT_FAIL;
 	}
 	else if (livingThreads[tid]->get_state() != uthread::state::SLEEPING)
 	{
 		// If the thread is not sleeping, return SHOULD_WAKE == 0.
+		resetSigMask(&oldSet);
 		return SHOULD_WAKE;
 	}
 	else
@@ -529,6 +616,7 @@ int uthread_get_time_until_wakeup(int tid)
 		// In general, diff shouldn't be negative, but if it does
 		// it shouldn't crash the whole program.
 		int diff = livingThreads[tid]->get_wakeup() - totalQuanta;
+		resetSigMask(&oldSet);
 		return diff >= SHOULD_WAKE ? diff : SHOULD_WAKE;
 	}
 }
@@ -569,11 +657,17 @@ int uthread_get_total_quantums()
 */
 int uthread_get_quantums(int tid)
 {
+	// Block SIGTVALRM signal
+	sigset_t oldSet;
+	blockSignal(SIGVTALRM, &oldSet);
+
 	if (livingThreads.find(tid) == livingThreads.end())
 	{
 		std::cerr << LIB_ERROR_MSG << "get_qunatums(" << tid
 			  << ") failed - no such thread id." << std::endl;
+		resetSigMask(&oldSet);
 		return EXIT_FAIL;
 	}
+	resetSigMask(&oldSet);
 	return livingThreads[tid]->get_runs();
 }
