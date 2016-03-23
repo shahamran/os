@@ -9,7 +9,7 @@ INCS=-I.
 LOADLIBES=-L./
 
 LIBSRC=uthreads.cpp uthread.cpp
-LIBH=uthread.h uthreads.h
+LIBH=uthread.h
 LIBOBJ=uthreads.o uthread.o
 ARFLAGS=rvs
 RANLIB=ranlib
