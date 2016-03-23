@@ -1,14 +1,14 @@
 ransha
 Ran Shaham (203781000)
-EX: 1
+EX: 2
 
 FILES:
-README  -- This file
+README		-- This file
 uthreads.cpp	-- My implementation of the uthreads library.
 uthread.h	-- A class definition of a uthread object.
 uthread.cpp	-- The uthread class implementation. 
-Makefile -- a makefile that creates the library (make with no arguments, or
-            'all')
+Makefile 	-- a makefile that creates the library (make with no arguments,
+ 		   or 'all')
 
 __Part_1_Notes__
 
@@ -41,4 +41,21 @@ Some disadvantages:
 
 _q_2_
 
+_q_3_
+Real time, as suggested by its name, counts the real time that has passed.
+Virtual time, on the other hand, counts the time that has passed while 
+executing the process - i.e it does not include the time that passed if the
+OS switched to another process and ran it.
+Thus it is clear that for each process that counts time: 
+virtual_time <= real_time.
+For example, if we want to write a program that tests reaction times of human
+beings to a visual stimulus we should use 'Real time', since we want to
+measure the real time that passed between displaying the stimulus and the
+reaction. We don't care if during that time 30 other processes ran.
+A good example for using virtual time is the current exercise - we want each
+thread to get the same amount of time running code, and avoid 'unlucky' threads
+that the os ran other processes on their share of run-time.
 
+_q_4_
+a. 
+b.
