@@ -1,0 +1,10 @@
+runMapReduceFramework started with 1 threads
+Thread ExecMap created [12.04.2016 14:20:00]
+Thread Shuffle created [12.04.2016 14:20:00]
+Thread ExecMap terminated [12.04.2016 14:20:00]
+Thread Shuffle terminated [12.04.2016 14:20:00]
+Thread ExecReduce created [12.04.2016 14:20:00]
+Thread ExecReduce terminated [12.04.2016 14:20:00]
+Map and Shuffle took 5000 ns
+Reduce took 3000 ns
+runMapReduceFramework finished
