@@ -1,0 +1,10 @@
+-----------------------------Sanity Test------------------------------
+_______________________________________________________________________
+
+1. Copy your ex3.tar to the same folder you extracted the sanity test.
+   Make sure that there are no other files in there.
+2. In shell, "cd" into this folder.
+3. Write: "test" in the shell and press enter. It will run the test.
+4. If the output is "Passed presubmission" - you are fine.
+5. Otherwise, the test prints "Failed presubmission" and the reason for the failure.
+   Fix the problem and run the test again.

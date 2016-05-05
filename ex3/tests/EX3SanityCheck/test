@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+
+import os
+import tarfile
+import test_README
+import shutil
+import subprocess
+from os import path
+
+test_failed = []
+
+def err(msg, test_failed):
+    if msg:
+        print("Failed presubmission")
+        #test_failed.append(msg)
+        print(msg)
+        exit(1)
+
+
+currTar = "currTar"
+
+MapReduceClientH = path.join(os.getcwd(), "MapReduceClient.h")
+MapReduceFrameworkH = path.join(os.getcwd(), "MapReduceFramework.h")
+
+currPath = path.join(os.getcwd(), currTar)
+
+# create temporal directory and copy h files
+if os.path.isdir(currPath):
+	shutil.rmtree(currPath)
+os.mkdir(currTar)
+
+try:
+	files = tarfile.open(path.join(os.getcwd(), "ex3.tar"))
+	files.extractall(path=currTar, members=None)
+except: 
+	err("Tar name: ex3.tar failed to open", test_failed)
+
+os.chdir(currPath)
+
+#tar
+required_input_files = {"README", "Makefile", "Search.cpp", "MapReduceFramework.cpp"}
+forbiden_input_files = {"MapReduceClient.h", "MapReduceFramework.h"}
+
+for i in required_input_files:
+	i = path.join(currPath, i)
+
+sentFiles = files.getnames()
+
+for r in required_input_files:
+    if r not in sentFiles:
+        err ("Missing Input File: " + r, test_failed)
+
+for s in sentFiles:
+    if s in forbiden_input_files:
+        err("You are not suppose to send the header file: " + s, test_failed)
+
+os.chdir("..")
+shutil.copy(MapReduceClientH, currPath)
+shutil.copy(MapReduceFrameworkH, currPath)
+os.chdir(currPath)
+
+#readme
+if "README" in sentFiles:
+    x = test_README.test_README(currPath)
+    err(x, test_failed)
+
+#make
+os.system("make")
+files_after_make = os.listdir(currPath)
+
+
+#look for the lib
+required_output_files = {"MapReduceFramework.a"}
+for r in required_output_files:
+  if r not in files_after_make:
+    err("Missing Output File: " + r, test_failed)
+    
+
+#run the lib
+try:
+	os.system("./Search os")
+	# output = subprocess.Popen(["./Search", "os"], stdout=subprocess.PIPE).communicate()[0]
+	output = subprocess.check_output(["./Search", "os"])
+
+	msg = b''
+	if output != msg:
+		err("You have excess prints to the output", test_failed)
+except BaseException as e:
+	err("Failed to run your library " + e, test_failed)
+	
+
+os.system("make clean")
+os.chdir(os.getcwd())
+shutil.rmtree(currPath)
+
+files.close()
+
+if len(test_failed) == 0:
+	print("Passed presubmission")
+else:
+	print("Failed presubmission")
+	for i in test_failed:
+		print(i)
