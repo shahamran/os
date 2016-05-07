@@ -1,12 +1,16 @@
 #include "MapReduceFramework.h"
-#include <pthread.h>
+
+//#include <pthread.h>
+#include "my_pthread.h"
 #include <vector>
 #include <queue>
 #include <map>
-#include <cmath> 		/* for fmin */
-#include <sys/time.h>
-#include <algorithm>
 
+#include <cmath> 		/* for fmin */
+#include <sys/time.h>		/* gettimeofday */
+#include <algorithm>		/* for std::move */
+
+// To reduce line-length and increase readability
 using std::vector;
 using std::queue;
 using std::map;
@@ -14,13 +18,14 @@ using std::multimap;
 using std::list;
 using std::pair;
 
+// Some constants
 #define CHUNK_SIZE 10
 #define SEC_TO_NSEC(x) ((x) * 1000000000)
 #define USEC_TO_NSEC(x) ((x) * 1000)
 #define TIME_TO_WAIT 0.01
+#define PTHREAD_SUCCESS 0
 
-
-/* Struct for the map procedure. nextToRead is the only variable that 
+/* Struct for the map procedure. nextToRead is the only variable that *
  * will be mutexed, as specified in the instructions. */
 typedef struct MapData
 {
@@ -30,6 +35,7 @@ typedef struct MapData
 	size_t nextToRead;
 } MapData;
 
+/* Same for reduce, the items list is static */
 typedef struct ReduceData
 {
 	MapReduceBase &mapReduce;
@@ -37,37 +43,55 @@ typedef struct ReduceData
 	size_t nextToRead;
 } ReduceData;
 
-// A list of existing threads
+// A list of existing ExecMap/ExecReduce threads
 vector<pthread_t> threadList;
+// The shuffle thread
 pthread_t shuffleThread;
-// In words: a list of pairs in which the first element is the pthread_id
-// and the second is that thread's list (pointer) of the map-function-outputs
 
 typedef queue<pair<k2Base*, v2Base*>> K2_V2_LIST;
+/* a list of pairs in which the first element is the pthread_id and *
+ * the second is that thread's list (pointer) of the map-function-outputs */
 vector	<pair<pthread_t, K2_V2_LIST*>> mapResultLists;
+
 map<k2Base*, V2_LIST&> shuffleOut;
 vector<pair<k2Base*, V2_LIST&>> reduceIn;
-// Same as before, but for the reduce-function-outputs
 
 typedef queue<pair<k3Base*, v3Base*>> K3_V3_LIST;
+// Same as before, but for the reduce-function-outputs
 vector	<pair<pthread_t, K3_V3_LIST*>> reduceResultLists;
 multimap<k3Base*, v3Base*> finalOutputMap;
 
+// Mutexes
 pthread_mutex_t mutex_map_read;
 pthread_mutex_t mutex_more_to_shuffle;
 pthread_mutex_t mutex_reduce_read;
-
+// Condition Variables
 pthread_cond_t cv_more_to_shuffle;
 bool more_to_shuffle;
 
 void init()
 {
-
+	my_pthread_mutex_init(&mutex_map_read, nullptr);
+	my_pthread_mutex_init(&mutex_more_to_shuffle, nullptr);
+	my_pthread_cond_init(&cv_more_to_shuffle, nullptr);
+	my_pthread_mutex_init(&mutex_reduce_read, nullptr);
+	more_to_shuffle = true;
 }
 
 void cleanup()
 {
+	my_pthread_mutex_destroy(&mutex_map_read);
+	my_pthread_mutex_destroy(&mutex_more_to_shuffle);
+	my_pthread_cond_destroy(&cv_more_to_shuffle);
+	my_pthread_mutex_destroy(&mutex_reduce_read);
 
+	threadList.clear();
+	shuffleThread = 0;
+	mapResultLists.clear();
+	shuffleOut.clear();
+	reduceIn.clear();
+	reduceResultLists.clear();
+	finalOutputMap.clear();
 }
 
 /**
@@ -83,22 +107,22 @@ void* ExecMap(void *arg)
 	// If there's no more data to read, return.
 	if ((myItems = mapdata->nextToRead) >= mapdata->numOfItems)
 	{
-		pthread_exit((void*)0); // PTHREAD CALL
+		pthread_exit(nullptr); 
 	}
 	// Lock the index counter
-	pthread_mutex_lock(&mutex_map_read); // PTHREAD CALL
+	my_pthread_mutex_lock(&mutex_map_read); 
 	// Reserve items to map and get the start index of them.
 	myItems = (mapdata->nextToRead += CHUNK_SIZE) - CHUNK_SIZE;
 	// Unlock
-	pthread_mutex_unlock(&mutex_map_read); // PTHREAD CALL
-	int end = fmin(myItems + CHUNK_SIZE, mapdata->numOfItems); // CHECK ERROR
+	my_pthread_mutex_unlock(&mutex_map_read); 
+	int end = fmin(myItems + CHUNK_SIZE, mapdata->numOfItems); 
 	for (int i=myItems; i < end; ++i)
 	{
 		mapdata->mapReduce.Map(mapdata->itemsList.at(i).first,
 				       mapdata->itemsList.at(i).second);
 	}
 	// Notify the shuffle thread
-	pthread_cond_signal(&cv_more_to_shuffle);
+	my_pthread_cond_signal(&cv_more_to_shuffle);
 	return nullptr;		
 }
 
@@ -107,15 +131,19 @@ void* Shuffle(void *arg)
 	struct timespec timeToWake;
 	struct timeval timeNow;
 	pair<k2Base*, v2Base*> currPair;
-	pthread_mutex_lock(&mutex_more_to_shuffle); // PTHREAD CALL
+	my_pthread_mutex_lock(&mutex_more_to_shuffle); 
 	while (more_to_shuffle)
 	{
-		gettimeofday(&timeNow, nullptr); // SYSTEM CALL
+		if (gettimeofday(&timeNow, nullptr) < 0)
+		{
+			cerr << DEF_ERROR_MSG("gettimeofday") << endl;
+			exit(EXIT_FAIL);
+		}
 		timeToWake.tv_sec = timeNow.tv_sec;
 		timeToWake.tv_nsec = USEC_TO_NSEC(timeNow.tv_usec) + 
 			SEC_TO_NSEC(TIME_TO_WAIT);
-		pthread_cond_timedwait(&cv_more_to_shuffle, 
-				&mutex_more_to_shuffle, &timeToWake); // PTHREAD CALL
+		my_pthread_cond_timedwait(&cv_more_to_shuffle, 
+				&mutex_more_to_shuffle, &timeToWake); 
 		
 		for (size_t i=0; i < mapResultLists.size(); ++i)
 		{
@@ -127,7 +155,7 @@ void* Shuffle(void *arg)
 			}
 		}
 	}	
-	pthread_mutex_unlock(&mutex_more_to_shuffle); // PTHREAD CALL
+	my_pthread_mutex_unlock(&mutex_more_to_shuffle); 
 	return arg;
 }
 
@@ -138,15 +166,15 @@ void* ExecReduce(void *arg)
 	// If there's no more data to read, return.
 	if ((myItems = reducedata->nextToRead) >= reducedata->numOfItems)
 	{
-		pthread_exit(nullptr); // PTHREAD CALL
+		pthread_exit(nullptr); 
 	}
 	// Lock the index counter
-	pthread_mutex_lock(&mutex_reduce_read); // PTHREAD CALL
+	my_pthread_mutex_lock(&mutex_reduce_read); 
 	// Reserve items to map and get the start index of them.
 	myItems = (reducedata->nextToRead += CHUNK_SIZE) - CHUNK_SIZE;
 	// Unlock
-	pthread_mutex_unlock(&mutex_reduce_read); // PTHREAD CALL
-	int end = fmin(myItems + CHUNK_SIZE, reducedata->numOfItems); // CHECK ERROR
+	my_pthread_mutex_unlock(&mutex_reduce_read); 
+	int end = fmin(myItems + CHUNK_SIZE, reducedata->numOfItems);
 	for (int i=myItems; i < end; ++i)
 	{
 		reducedata->mapReduce.Reduce(reduceIn.at(i).first,
@@ -174,6 +202,7 @@ OUT_ITEMS_LIST runMapReduceFramework(MapReduceBase &mapReduce,
 {
 	// Initialize mutexes, cvs, datastructures...
 	init();
+	threadList.resize(multiThreadLevel);
 	// Turn the in_items_list into a vector
 	vector<IN_ITEM> itemsVector{std::begin(itemsList),
 				    std::end(itemsList)  };
@@ -182,23 +211,23 @@ OUT_ITEMS_LIST runMapReduceFramework(MapReduceBase &mapReduce,
 		.numOfItems = itemsVector.size(), .nextToRead = 0};
 
 	// Create the ExecMap threads!
-	for (int i=0; i < multiThreadLevel; ++i)
+	for (int i = 0; i < multiThreadLevel; ++i)
 	{
-		pthread_create(&threadList[i], NULL, &ExecMap, &mapdata); // PTHREAD CALL
+		my_pthread_create(&threadList[i], nullptr, &ExecMap, &mapdata);
 	}
 	// Create the shuffle thread
-	pthread_create(&shuffleThread, nullptr, &Shuffle, nullptr); // PTHREAD CALL	
+	my_pthread_create(&shuffleThread, nullptr, &Shuffle, nullptr);
 	// Wait for the ExecMaps to finish
-	for (int i=0; i < multiThreadLevel; ++i)
+	for (int i = 0; i < multiThreadLevel; ++i)
 	{
-		pthread_join(threadList[i], nullptr); // PTHREAD CALL
+		my_pthread_join(threadList[i], nullptr);
 	}
 	// Wait for the shuffle to finish
-	pthread_mutex_lock(&mutex_more_to_shuffle); // PTHREAD CALL
+	my_pthread_mutex_lock(&mutex_more_to_shuffle); 
 	more_to_shuffle = false;
-	pthread_mutex_unlock(&mutex_more_to_shuffle); // PTHREAD CALL
-	pthread_cond_signal(&cv_more_to_shuffle); // PTHREAD CALL
-	pthread_join(shuffleThread, nullptr); // PTHREAD CALL
+	my_pthread_mutex_unlock(&mutex_more_to_shuffle); 
+	my_pthread_cond_signal(&cv_more_to_shuffle); 
+	my_pthread_join(shuffleThread, nullptr); 
 	// Transform the shuffle output map to a vector.	
 	reduceIn.resize(shuffleOut.size());
 	std::move(shuffleOut.begin(), shuffleOut.end(), reduceIn.begin());
@@ -206,14 +235,15 @@ OUT_ITEMS_LIST runMapReduceFramework(MapReduceBase &mapReduce,
 	ReduceData reducedata = {.mapReduce = mapReduce, .nextToRead = 0};
 
 	// Reduce!
-	for (int i=0; i < multiThreadLevel; ++i)
+	for (int i = 0; i < multiThreadLevel; ++i)
 	{
-		pthread_create(&threadList[i], nullptr, &ExecReduce, &reducedata); // PTHREAD CALL		
+		my_pthread_create(&threadList[i], nullptr, 
+				&ExecReduce, &reducedata); 		
 	}
 	// Wait for reduce to finish
 	for (int i = 0; i < multiThreadLevel; ++i)
 	{
-		pthread_join(threadList[i], nullptr); // PTHREAD CALL
+		my_pthread_join(threadList[i], nullptr); 
 	}
 	// "Shuffle" reduce's output!
 	finalize_output();
@@ -230,12 +260,12 @@ void Emit2(k2Base *key, v2Base *val)
 {
 	// Figure out which thread is handling this function
 	pthread_t currThread;
-	currThread = pthread_self(); // PTHREAD CALL
+	currThread = pthread_self(); 
 	size_t end = mapResultLists.size();
 	// Add the given key,val pair to the correct list:
 	for (size_t i=0; i < end; ++i)
 	{
-		if (pthread_equal(mapResultLists[i].first, currThread)) // PTHREAD CALL
+		if (pthread_equal(mapResultLists[i].first, currThread)) 
 		{
 			mapResultLists[i].second->push(
 					          std::make_pair(key, val) );
@@ -247,11 +277,11 @@ void Emit2(k2Base *key, v2Base *val)
 void Emit3(k3Base *key, v3Base *val)
 {
 	pthread_t currThread;
-	currThread = pthread_self(); // PTHREAD CALL
+	currThread = pthread_self(); 
 	size_t end = reduceResultLists.size();
 	for (size_t i = 0; i < end; ++i)
 	{
-		if (pthread_equal(reduceResultLists[i].first, currThread)) // PTHREAD CALL
+		if (pthread_equal(reduceResultLists[i].first, currThread)) 
 		{
 			reduceResultLists[i].second->push(
 						     std::make_pair(key, val));
