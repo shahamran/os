@@ -1,4 +1,4 @@
-CFLAGS=-Wall -g -std=c++11 $(INCS)
+CFLAGS=-Wall -Wextra -g -std=c++11 $(INCS)
 
 # cpp to object files rule
 %.o: %.cpp
@@ -8,31 +8,33 @@ CFLAGS=-Wall -g -std=c++11 $(INCS)
 INCS=-I.
 LOADLIBES=-L./
 
-LIBSRC=uthreads.cpp uthread.cpp
-LIBH=uthread.h
-LIBOBJ=uthreads.o uthread.o
+LIBSRC=MapReduceFramework.cpp
+LIBH=MapReduceFramework.h
+LIBOBJ=MapReduceFramework.o
 ARFLAGS=rvs
 RANLIB=ranlib
 
-UTHREADSLIB=libuthreads.a
-TARGETS=$(UTHREADSLIB)
+LIBTARGET=libuthreads.a
 
-all: $(TARGETS)
+all: $(TEST_OBJ)
 
-# library rule
-$(TARGETS): $(LIBOBJ)
+# library rules
+$(LIBOBJ): $(LIBSRC)
+	$(CXX) $(CFLAGS) -pthread -c $<
+
+$(LIBTARGET): $(LIBOBJ)
 	$(AR) $(ARFLAGS) $@ $^
 	$(RANLIB) $@
 
 
 # test rules
-TEST_FILE=main.cpp
-TEST_OBJ=test
+TEST_FILE=Search.cpp
+TEST_OBJ=Search
 VALGRIND_FLAGS = --leak-check=full --show-possibly-lost=yes \
 		 --show-reachable=yes --undef-value-errors=yes
 
-$(TEST_OBJ): $(UTHREADSLIB)
-	$(CC) $(CFLAGS) $(TEST_FILE) $(UTHREADSLIB) -o $@
+$(TEST_OBJ): $(LIBTARGET)
+	$(CC) $(CFLAGS) $(TEST_FILE) $(LIBTARGET) -o $@
 
 ValgrindTest: $(TEST_OBJ)
 	valgrind $(VALGRIND_FLAGS) ./$<
@@ -40,7 +42,7 @@ ValgrindTest: $(TEST_OBJ)
 # cleaning and such
 RM=rm -fv
 clean:
-	$(RM) $(TARGETS) $(UTHREADSLIB) $(OBJ) $(LIBOBJ) *~ *core $(TEST_OBJ)
+	$(RM) $(TEST_OBJ) $(LIBTARGET) 
 
 depend:
 	makedepend -- $(CFLAGS) -- $(SRC) $(LIBSRC)
@@ -48,8 +50,8 @@ depend:
 # tar rule
 TAR=tar
 TARFLAGS=-cvf
-TARNAME=ex2.tar
-TARSRCS=$(LIBSRC) $(LIBH) Makefile README
+TARNAME=ex3.tar
+TARSRCS=$(LIBSRC) $(TEST_FILE) Makefile README
 
 tar:
 	$(TAR) $(TARFLAGS) $(TARNAME) $(TARSRCS)

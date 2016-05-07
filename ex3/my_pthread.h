@@ -1,3 +1,9 @@
+/**
+ * This header is a wrapper for some of the pthread library functions
+ * which adds error handling, as specified in the exercise instructions.
+ * All functions don't return any value (void functions) and upon errors they
+ * print the default error message and exit the process.
+ */
 #ifndef _MY_PTHREAD_H
 #define _MY_PTHREAD_H
 
@@ -140,5 +146,4 @@ void my_pthread_cond_timedwait(pthread_cond_t *cond,
 }
 
 #endif
-
 
