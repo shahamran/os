@@ -14,7 +14,7 @@ LIBOBJ=MapReduceFramework.o
 ARFLAGS=rvs
 RANLIB=ranlib
 
-LIBTARGET=libuthreads.a
+LIBTARGET=MapReduceFramework.a
 
 all: $(TEST_OBJ)
 
@@ -42,7 +42,7 @@ ValgrindTest: $(TEST_OBJ)
 # cleaning and such
 RM=rm -fv
 clean:
-	$(RM) $(TEST_OBJ) $(LIBTARGET) 
+	$(RM) $(TEST_OBJ) $(LIBTARGET) *.o
 
 depend:
 	makedepend -- $(CFLAGS) -- $(SRC) $(LIBSRC)

@@ -1,5 +1,6 @@
 #include "MapReduceClient.h"
 #include "MapReduceFramework.h"
+
 #include <string>
 #include <vector>
 #include <iostream>
@@ -80,7 +81,7 @@ typedef std::list<v2Base *> V2_LIST;
  */
 class MapReduce : MapReduceBase {
 public:
-    virtual void Map(const k1Base *const key, const v1Base *const val) const
+    virtual void Map(const DirNameKey *const key, const v1Base *const val) const
     {
 	    // Downcast to k1*
 	    const DirNameKey* const pdirkey = (const DirNameKey* const)key;

@@ -101,9 +101,23 @@ void cleanup()
 
 	threadList.clear();
 	shuffleThread = 0;
+	for (auto it = mapResultLists.begin(); it != mapResultLists.end();
+			++it)
+	{
+		delete it->second;
+	}
 	mapResultLists.clear();
 	shuffleOut.clear();
+	for (auto it = reduceIn.begin(); it != reduceIn.end(); ++it)
+	{
+		delete it->second;
+	}
 	reduceIn.clear();
+	for (auto it  = reduceResultLists.begin();
+	          it != reduceResultLists.end(); ++it)
+	{
+		delete it->second;
+	}
 	reduceResultLists.clear();
 	finalOutputMap.clear();
 }
@@ -268,7 +282,8 @@ OUT_ITEMS_LIST runMapReduceFramework(MapReduceBase &mapReduce,
 	reduceIn.resize(shuffleOut.size());
 	std::move(shuffleOut.begin(), shuffleOut.end(), reduceIn.begin());
 	// Initialize the reducedata struct
-	ReduceData reducedata = {.mapReduce = mapReduce, .nextToRead = 0};
+	ReduceData reducedata = {.mapReduce = mapReduce, 
+		.numOfItems = reduceIn.size(), .nextToRead = 0};
 
 	// Reduce!
 	for (int i = 0; i < multiThreadLevel; ++i)
