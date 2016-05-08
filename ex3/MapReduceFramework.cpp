@@ -39,6 +39,7 @@ typedef struct MapData
 typedef struct ReduceData
 {
 	MapReduceBase &mapReduce;
+	size_t threadNum;
 	size_t numOfItems;
 	size_t nextToRead;
 } ReduceData;
@@ -48,17 +49,18 @@ template<class T> struct ptr_less
 {
     bool operator()(T* lhs, T* rhs) 
     {
-        return *lhs < *rhs; 
+        return lhs->operator<(*rhs); 
     }
 };
 
 vector<pthread_t> threadList; /* A list of existing ExecMap/Reduce threads */
 pthread_t shuffleThread;      /* The shuffle thread */
 
-typedef queue<pair<k2Base*, v2Base*>> K2_V2_LIST;
+typedef vector<pair<k2Base*, v2Base*>> K2_V2_LIST;
 /* a list of pairs in which the first element is the pthread_t (id) and *
  * the second is that thread's list (pointer) of the map-function-outputs */
-vector	<pair<pthread_t, K2_V2_LIST*>> mapResultLists;
+vector<pair<pthread_t, K2_V2_LIST*>> mapResultLists;
+vector<size_t> shuffleCurrIndex;
 
 /* Note that the map compares keys using ptr_less defined above */
 map<k2Base*, V2_LIST*, ptr_less<k2Base>> shuffleOut;
@@ -71,6 +73,7 @@ multimap<k3Base*, v3Base*, ptr_less<k3Base>> finalOutputMap;
 
 /* Mutexes */
 pthread_mutex_t mutex_map_read;
+pthread_mutex_t mutex_em_map;
 pthread_mutex_t mutex_more_to_shuffle;
 pthread_mutex_t mutex_reduce_read;
 /* Condition Variables */
@@ -80,13 +83,18 @@ bool more_to_shuffle;
 /**
  * Initializes all mutexes, cv and relevant static variables for the library.
  */
-void init()
+void init(int multiThreadLevel)
 {
 	my_pthread_mutex_init(&mutex_map_read, nullptr);
+	my_pthread_mutex_init(&mutex_em_map, nullptr);
 	my_pthread_mutex_init(&mutex_more_to_shuffle, nullptr);
 	my_pthread_cond_init(&cv_more_to_shuffle, nullptr);
 	my_pthread_mutex_init(&mutex_reduce_read, nullptr);
 	more_to_shuffle = true;
+	threadList.resize(multiThreadLevel);
+	mapResultLists.resize(multiThreadLevel);
+	shuffleCurrIndex.resize(multiThreadLevel);
+	reduceResultLists.resize(multiThreadLevel);
 }
 
 /**
@@ -95,6 +103,7 @@ void init()
 void cleanup()
 {
 	my_pthread_mutex_destroy(&mutex_map_read);
+	my_pthread_mutex_destroy(&mutex_em_map);
 	my_pthread_mutex_destroy(&mutex_more_to_shuffle);
 	my_pthread_cond_destroy(&cv_more_to_shuffle);
 	my_pthread_mutex_destroy(&mutex_reduce_read);
@@ -130,6 +139,8 @@ void cleanup()
  */
 void* ExecMap(void *arg)
 {
+	my_pthread_mutex_lock(&mutex_em_map);
+	my_pthread_mutex_unlock(&mutex_em_map);
 	MapData* mapdata = (MapData*) arg;
 	size_t myItems; // The start index for this thread's data
 	// If there's no more data to read, my work here is done.
@@ -164,7 +175,12 @@ void* Shuffle(void *arg)
 	struct timespec timeToWake;
 	struct timeval timeNow;
 	pair<k2Base*, v2Base*> currPair;
-	auto currV2List = shuffleOut.begin();
+	k2Base* currKey;
+	v2Base* currVal;
+	auto foundList = shuffleOut.end();
+	V2_LIST* newList = nullptr;
+	size_t currIdx = 0;
+	K2_V2_LIST* currList = nullptr;
 
 	my_pthread_mutex_lock(&mutex_more_to_shuffle); 
 	while (more_to_shuffle)
@@ -182,44 +198,33 @@ void* Shuffle(void *arg)
 		// Check every ExecMap container for items to shuffle
 		for (size_t i = 0; i < mapResultLists.size(); ++i)
 		{
-			while (  mapResultLists[i].second != nullptr &&
-				!mapResultLists[i].second->empty())
+			currList = mapResultLists[i].second;
+			for (currIdx = shuffleCurrIndex[i];
+			     currList != nullptr && currIdx < currList->size();
+			     ++currIdx)
 			{
-				currPair = mapResultLists[i].second->front();
-				mapResultLists[i].second->pop();
-				currV2List = shuffleOut.find(currPair.first);
+				currPair = currList->at(currIdx);
+				currKey = currPair.first;
+				currVal = currPair.second;
+				foundList = shuffleOut.find(currKey);
 				// If no k2 entry exists, create it.
-				if (currV2List == shuffleOut.end())
+				if (foundList == shuffleOut.end())
 				{
-					currV2List = shuffleOut.insert(
-						std::make_pair(currPair.first,
-					    new(std::nothrow) V2_LIST)).first;
+					newList = new(std::nothrow) V2_LIST;
 					// If new operator has failed
-					if (shuffleOut[currPair.first] == 
-							nullptr)
+					if (newList == nullptr)
 					{
 						cerr << DEF_ERROR_MSG("new")
 						     << endl;
 						exit(EXIT_FAIL);
 					}
-					
-				}
-				// If no list exists, create it.
-				else if (currV2List->second == nullptr)
-				{
-					currV2List->second = new(std::nothrow) 
-						V2_LIST;
-					// If new operator has failed
-					if (currV2List->second == nullptr)
-					{
-						cerr << DEF_ERROR_MSG("new")
-							<< endl;
-						exit(EXIT_FAIL);
-					}
+					shuffleOut[currKey] = newList;
+					newList = nullptr;
 				}
 				// Add the new v2 element to the list
-				currV2List->second->push_back(currPair.second);
+				shuffleOut[currKey]->push_back(currVal);
 			}
+			shuffleCurrIndex[i] = currIdx;
 		}
 	}
 	my_pthread_mutex_unlock(&mutex_more_to_shuffle); 
@@ -229,6 +234,18 @@ void* Shuffle(void *arg)
 void* ExecReduce(void *arg)
 {
 	ReduceData* reducedata = (ReduceData*) arg;
+	size_t threadNum = reducedata->threadNum;
+	pthread_t tid = pthread_self();
+	if (!pthread_equal(reduceResultLists[threadNum].first, tid))
+	{
+		reduceResultLists[threadNum] = std::make_pair(
+		 tid, new(std::nothrow) K3_V3_LIST);
+		if (reduceResultLists[threadNum].second == nullptr)
+		{
+			cerr << DEF_ERROR_MSG("new") << endl;
+			exit(EXIT_FAIL);
+		}
+	}
 	size_t myItems; // The start index for this thread's data
 	// If there's no more data to read, return.
 	if ((myItems = reducedata->nextToRead) >= reducedata->numOfItems)
@@ -269,20 +286,34 @@ OUT_ITEMS_LIST runMapReduceFramework(MapReduceBase &mapReduce,
 		IN_ITEMS_LIST &itemsList, int multiThreadLevel)
 {
 	// Initialize mutexes, cvs, datastructures...
-	init();
-	threadList.resize(multiThreadLevel);
+	init(multiThreadLevel);
 	// Turn the in_items_list into a vector
 	vector<IN_ITEM> itemsVector( std::begin(itemsList),
 				     std::end(itemsList)  );
 	// Initalize the mapdata struct
 	MapData mapdata = {.mapReduce = mapReduce, .itemsList = itemsVector, 
-		.numOfItems = itemsVector.size(), .nextToRead = 0};
+		.numOfItems = itemsVector.size(), 
+		.nextToRead = 0};
 
 	// Create the ExecMap threads!
+	my_pthread_mutex_lock(&mutex_em_map);
 	for (int i = 0; i < multiThreadLevel; ++i)
 	{
 		my_pthread_create(&threadList[i], nullptr, &ExecMap, &mapdata);
 	}
+	// Initialize all threads' maps
+	for (int i = 0; i < multiThreadLevel; ++i)
+	{
+		mapResultLists[i] = std::make_pair(threadList[i], 
+				new(std::nothrow) K2_V2_LIST);
+		if (mapResultLists[i].second == nullptr)
+		{
+			cerr << DEF_ERROR_MSG("new") << endl;
+			exit(EXIT_FAIL);
+		}
+	}
+	my_pthread_mutex_unlock(&mutex_em_map);
+
 	// Create the shuffle thread
 	my_pthread_create(&shuffleThread, nullptr, &Shuffle, nullptr);
 	// Wait for the ExecMaps to finish
@@ -300,12 +331,13 @@ OUT_ITEMS_LIST runMapReduceFramework(MapReduceBase &mapReduce,
 	reduceIn.resize(shuffleOut.size());
 	std::move(shuffleOut.begin(), shuffleOut.end(), reduceIn.begin());
 	// Initialize the reducedata struct
-	ReduceData reducedata = {.mapReduce = mapReduce, 
+	ReduceData reducedata = {.mapReduce = mapReduce, .threadNum = 0,
 		.numOfItems = reduceIn.size(), .nextToRead = 0};
 
 	// Reduce!
 	for (int i = 0; i < multiThreadLevel; ++i)
 	{
+		reducedata.threadNum = i;
 		my_pthread_create(&threadList[i], nullptr, 
 				&ExecReduce, &reducedata); 		
 	}
@@ -336,18 +368,7 @@ void Emit2(k2Base *key, v2Base *val)
 	{
 		if (pthread_equal(mapResultLists[i].first, currThread)) 
 		{
-			if (mapResultLists[i].second == nullptr)
-			{
-				mapResultLists[i].second = new(std::nothrow)
-				       K2_V2_LIST;
-				// If new operator failed
-				if (mapResultLists[i].second == nullptr)
-				{
-					cerr << DEF_ERROR_MSG("new") << endl;
-					exit(EXIT_FAIL);
-				}
-			}
-			mapResultLists[i].second->push(
+			mapResultLists[i].second->push_back(
 					          std::make_pair(key, val) );
 			return;
 		}
@@ -363,17 +384,6 @@ void Emit3(k3Base *key, v3Base *val)
 	{
 		if (pthread_equal(reduceResultLists[i].first, currThread)) 
 		{
-			if (reduceResultLists[i].second == nullptr)
-			{
-				reduceResultLists[i].second = 
-					new(std::nothrow) K3_V3_LIST;
-				// If new operator has failed
-				if (reduceResultLists[i].second == nullptr)
-				{
-					cerr << DEF_ERROR_MSG("new") << endl;
-					exit(EXIT_FAIL);
-				}
-			}
 			reduceResultLists[i].second->push(
 						     std::make_pair(key, val));
 			return;
