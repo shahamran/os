@@ -49,7 +49,8 @@ template<class T> struct ptr_less
 {
     bool operator()(T* lhs, T* rhs) 
     {
-        return lhs->operator<(*rhs); 
+	return *lhs < *rhs;
+//        return lhs->operator<(*rhs); 
     }
 };
 
@@ -114,18 +115,21 @@ void cleanup()
 			++it)
 	{
 		delete it->second;
+		it->second = nullptr;
 	}
 	mapResultLists.clear();
 	shuffleOut.clear();
 	for (auto it = reduceIn.begin(); it != reduceIn.end(); ++it)
 	{
 		delete it->second;
+		it->second = nullptr;
 	}
 	reduceIn.clear();
 	for (auto it  = reduceResultLists.begin();
 	          it != reduceResultLists.end(); ++it)
 	{
 		delete it->second;
+		it->second = nullptr;
 	}
 	reduceResultLists.clear();
 	finalOutputMap.clear();

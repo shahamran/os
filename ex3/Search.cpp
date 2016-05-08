@@ -1,6 +1,7 @@
 #include "MapReduceClient.h"
 #include "MapReduceFramework.h"
 
+#include <cerrno>
 #include <string>
 #include <vector>
 #include <iostream>
@@ -9,14 +10,14 @@
 
 #define EXIT_SUCC 0
 #define EXIT_FAIL 1
-#define THREAD_LEVEL 5
+#define THREAD_LEVEL 10
 #define CURR_DIR "."
 #define PARENT_DIR ".."
 
 using std::string;
 
 // Constants:
-const int MIN_ARGS = 3;
+const int MIN_ARGS = 2;
 const string USAGE_ERROR_MESSAGE = "Usage: <substring to search> "
 	"<folders, separated by spaces>";
 
@@ -41,7 +42,7 @@ public:
 	{
 		const DirNameKey &dirother = 
 			dynamic_cast<const DirNameKey&> (other);
-		return dirName.compare(dirother.dirName);
+		return dirName < dirother.dirName;
 	}
 	
 	const string getDirName() const
@@ -78,7 +79,7 @@ public:
 	{
 		const FileNameKey1 &fileOther = 
 			dynamic_cast<const FileNameKey1&>(other);
-		return fileName.compare(fileOther.fileName);
+		return fileName < fileOther.fileName;
 	}
 
 	const string getFileName() const
@@ -95,6 +96,11 @@ class v2Deriv : public v2Base
 public:
 	FileNameKey1 *k2Pointer;
 	v2Deriv(FileNameKey1 *k2p) : k2Pointer(k2p) {}	
+	virtual ~v2Deriv() 
+	{ 
+		delete k2Pointer;
+		k2Pointer = nullptr;
+	}
 };
 
 //output key and value
@@ -110,7 +116,7 @@ public:
 	{
 		const FileNameKey2 &fileOther = 
 			dynamic_cast<const FileNameKey2&>(other);
-		return fileName.compare(fileOther.fileName);
+		return fileName < fileOther.fileName;
 	}
 
 	const string getFileName() const
@@ -154,9 +160,15 @@ public:
 		    (const StringToFind* const)val;
 	    // Open the directory and iterate over files in it
 	    string dirName = pdirkey->getDirName();
+	    
 	    DIR *pdir = opendir(dirName.c_str());
 	    if (pdir == nullptr)
 	    {
+	    	    // Skip this file if it is not a directory.
+		    if (errno == ENOTDIR || errno == ENOENT)
+		    {
+			    return;
+		    }
 		    handleError("opendir");
 	    }
 	    struct dirent *pent = nullptr;
@@ -166,12 +178,9 @@ public:
 		    currFile = pent->d_name;
 		    // Ignore '.' and '..' folders
 		    if (currFile.compare(CURR_DIR) == 0 ||
-			currFile.compare(PARENT_DIR) == 0)
-		    {
-			    continue;
-		    }
-		    // If searched string was not found, continue.
-		    if (currFile.find(ptoFind->getStr()) == string::npos)
+			currFile.compare(PARENT_DIR) == 0 ||
+		    	// or if searched string was not found.
+			currFile.find(ptoFind->getStr()) == string::npos)
 		    {
 			    continue;
 		    }
@@ -210,12 +219,13 @@ public:
 		    handleError("new");
 	    }
 	    Emit3(pKey, pVal);
-	    v2Deriv* currItem;
+	    // Delete the k2,v2 pairs
+	    v2Deriv* currV2Item;
 	    for (auto it = vals.begin(); it != vals.end(); ++it)
 	    {
-		    currItem = dynamic_cast<v2Deriv*>(*it);
-		    delete currItem->k2Pointer;
-		    delete currItem;
+		    currV2Item = dynamic_cast<v2Deriv*>(*it);
+		    delete currV2Item;
+		    currV2Item = nullptr;
 	    }
     }
 };
