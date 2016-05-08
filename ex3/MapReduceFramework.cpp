@@ -188,7 +188,24 @@ void* Shuffle(void *arg)
 				currPair = mapResultLists[i].second->front();
 				mapResultLists[i].second->pop();
 				currV2List = shuffleOut.find(currPair.first);
-				if (currV2List->second == nullptr)
+				// If no k2 entry exists, create it.
+				if (currV2List == shuffleOut.end())
+				{
+					currV2List = shuffleOut.insert(
+						std::make_pair(currPair.first,
+					    new(std::nothrow) V2_LIST)).first;
+					// If new operator has failed
+					if (shuffleOut[currPair.first] == 
+							nullptr)
+					{
+						cerr << DEF_ERROR_MSG("new")
+						     << endl;
+						exit(EXIT_FAIL);
+					}
+					
+				}
+				// If no list exists, create it.
+				else if (currV2List->second == nullptr)
 				{
 					currV2List->second = new(std::nothrow) 
 						V2_LIST;
@@ -200,10 +217,11 @@ void* Shuffle(void *arg)
 						exit(EXIT_FAIL);
 					}
 				}
+				// Add the new v2 element to the list
 				currV2List->second->push_back(currPair.second);
 			}
 		}
-	}	
+	}
 	my_pthread_mutex_unlock(&mutex_more_to_shuffle); 
 	return arg;
 }

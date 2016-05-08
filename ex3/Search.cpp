@@ -5,9 +5,13 @@
 #include <vector>
 #include <iostream>
 #include <dirent.h>
+#include <cstring>
 
 #define EXIT_SUCC 0
 #define EXIT_FAIL 1
+#define THREAD_LEVEL 5
+#define CURR_DIR "."
+#define PARENT_DIR ".."
 
 using std::string;
 
@@ -16,19 +20,28 @@ const int MIN_ARGS = 2;
 const string USAGE_ERROR_MESSAGE = "Usage: <substring to search> "
 	"<folders, separated by spaces>";
 
+void handleError(const string funcName)
+{
+	std::cerr << "runMapReduceFramework Failure: " << funcName
+		  << " failed." << std::endl;
+	exit(EXIT_FAIL);
+}
+
 /**
  * 
  */
-class DirNameKey : k1Base
+class DirNameKey : public k1Base
 {
 public:
-	DirNameKey(const string f)  : dirName(f) {}	
+	DirNameKey(const string d)  : dirName(d) {}	
 
 	virtual ~DirNameKey() {}
 
-	virtual bool operator<(const DirNameKey &other) const
+	virtual bool operator<(const k1Base &other) const override
 	{
-		return dirName.compare(other.dirName);
+		const DirNameKey &dirother = 
+			dynamic_cast<const DirNameKey&> (other);
+		return dirName.compare(dirother.dirName);
 	}
 	
 	const string getDirName() const
@@ -41,15 +54,18 @@ private:
 
 //intermediate key and value.
 //the key, value for the Reduce function created by the Map function
-class FileNameKey : public k2Base, public k3Base {
+class FileNameKey1 : public k2Base
+{
 public:
-	FileNameKey(const string f) : fileName(f) {}
+	FileNameKey1(const string f) : fileName(f) {}
 
-	virtual ~FileNameKey(){}
+	virtual ~FileNameKey1(){}
 
-	virtual bool operator<(const FileNameKey &other) const
+	virtual bool operator<(const k2Base &other) const override
 	{
-		return fileName.compare(other.fileName);
+		const FileNameKey1 &fileOther = 
+			dynamic_cast<const FileNameKey1&>(other);
+		return fileName.compare(fileOther.fileName);
 	}
 
 	const string getFileName() const
@@ -61,59 +77,177 @@ private:
 	const string fileName;
 };
 
-class v2Base {
+class v2Deriv : public v2Base
+{
 public:
-	virtual ~v2Base(){}
+	FileNameKey1 *k2Pointer;
+	v2Deriv(FileNameKey1 *k2p) : k2Pointer(k2p) {}	
 };
 
 //output key and value
 //the key,value for the Reduce function created by the Map function
-
-class v3Base {
+class FileNameKey2 : public k3Base
+{
 public:
-	virtual ~v3Base() {}
+	FileNameKey2(const string f) : fileName(f) {}
+
+	virtual ~FileNameKey2(){}
+
+	virtual bool operator<(const k3Base &other) const override
+	{
+		const FileNameKey2 &fileOther = 
+			dynamic_cast<const FileNameKey2&>(other);
+		return fileName.compare(fileOther.fileName);
+	}
+
+	const string getFileName() const
+	{
+		return fileName;
+	}
+
+private:
+	const string fileName;
 };
 
-typedef std::list<v2Base *> V2_LIST;
+class FileCountValue : public v3Base 
+{
+public:
+
+	FileCountValue(int count) : myCount(count) {}
+
+	virtual ~FileCountValue() {}
+
+	int getCount() const
+	{
+		return myCount;
+	}
+
+private:
+	const int myCount;
+};
 
 /**
  * The map and reduce functions implementation
  */
-class MapReduce : MapReduceBase {
+class MyMapReduce : public MapReduceBase {
 public:
-    virtual void Map(const DirNameKey *const key, const v1Base *const val) const
+
+    virtual void Map(const k1Base *const key, const v1Base *const) 
+	    const override
     {
 	    // Downcast to k1*
 	    const DirNameKey* const pdirkey = (const DirNameKey* const)key;
 	    // Open the directory and iterate over files in it
 	    string dirName = pdirkey->getDirName();
 	    DIR *pdir = opendir(dirName.c_str());
-	    if (pdir == NULL)
+	    if (pdir == nullptr)
 	    {
-		    
+		    handleError("opendir");
 	    }
-	    struct dirent *pent = NULL;
+	    struct dirent *pent = nullptr;
 	    while ( (pent = readdir(pdir)) )
 	    {
-		    Emit2(std::make_pair(new FileNameKey(pent->d_name), &1));
+		    // Ignore '.' and '..' folders
+		    if (strcmp(CURR_DIR, pent->d_name) == 0 ||
+			strcmp(PARENT_DIR, pent->d_name) == 0)
+		    {
+			    continue;
+		    }
+		    FileNameKey1* pKey = 
+			    new(std::nothrow) FileNameKey1(pent->d_name);
+		    if (pKey == nullptr)
+		    {
+			    handleError("new");
+		    }
+		    v2Deriv* pVal = new(std::nothrow) v2Deriv(pKey);
+		    if (pVal == nullptr)
+		    {
+			    handleError("new");
+		    }
+		    Emit2(pKey, pVal);
+	    }
+	    if (closedir(pdir) < 0)
+	    {
+		    handleError("closedir");
 	    }
 
     }
 
-    virtual void Reduce(const k2Base *const key, const V2_LIST &vals) const
+    virtual void Reduce(const k2Base *const key, const V2_LIST &vals) 
+	    const override
     {
-	    
+	    const FileNameKey1* const pfileName = 
+		    (const FileNameKey1* const)key;
+
+	    FileNameKey2 *pKey =
+		   new(std::nothrow) FileNameKey2(pfileName->getFileName());
+	    FileCountValue *pVal = 
+		    new(std::nothrow) FileCountValue(vals.size());
+	    if (pKey == nullptr || pVal == nullptr)
+	    {
+		    handleError("new");
+	    }
+	    Emit3(pKey, pVal);
+	    v2Deriv* currItem;
+	    for (auto it = vals.begin(); it != vals.end(); ++it)
+	    {
+		    currItem = dynamic_cast<v2Deriv*>(*it);
+		    delete currItem->k2Pointer;
+		    delete currItem;
+	    }
     }
 };
 
+void cleanup(IN_ITEMS_LIST& inItems, OUT_ITEMS_LIST& outItems)
+{
+	for (auto it = inItems.begin(); it != inItems.end(); ++it)
+	{
+		delete it->first;
+	}
+	for (auto it = outItems.begin(); it != outItems.end(); ++it)
+	{
+		delete it->first;
+		delete it->second;
+	}
+}
 
-// Implementation
+void runMapReduce(int numOfDirs, char* dirName[])
+{	
+	// Prepare the input
+	IN_ITEMS_LIST inItems;
+	MyMapReduce mapReduce;
+	std::pair<k1Base*, v1Base*> currPair;
+	for (int i = 0; i < numOfDirs; ++i)
+	{
+		currPair = std::make_pair(new DirNameKey(dirName[i]),
+				nullptr);
+		inItems.push_back(currPair);
+	}
+	OUT_ITEMS_LIST outItems;
+	// Run MapReduce
+	outItems = runMapReduceFramework(mapReduce, inItems, THREAD_LEVEL);
+	// Print the [sorted] output
+	for (auto it = outItems.begin(); it != outItems.end(); ++it)
+	{
+		FileNameKey2* filename = 
+			dynamic_cast<FileNameKey2*>(it->first);
+		FileCountValue* count = 
+			dynamic_cast<FileCountValue*>(it->second);
+
+		// For each occurence of the filename, print it.
+		for (int i = 0; i < count->getCount(); ++i)
+		{
+			std::cout << filename->getFileName() << std::endl;
+		}
+	}
+	cleanup(inItems, outItems);
+}
+
 int main(int argc, char* argv[])
 {
-	std::vector<std::pair<DirNameKey, v1Base>> inList;
 	if (argc >= MIN_ARGS)
 	{
-				
+		runMapReduce(argc, argv);
 	}
 	else
 	{
