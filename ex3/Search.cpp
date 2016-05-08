@@ -8,9 +8,12 @@
 #include <dirent.h>
 #include <cstring>
 
+#define ARG_STR_TO_FIND 1
+#define ARG_DIR_START 2
+
 #define EXIT_SUCC 0
 #define EXIT_FAIL 1
-#define THREAD_LEVEL 10
+#define THREAD_LEVEL 5
 #define CURR_DIR "."
 #define PARENT_DIR ".."
 
@@ -21,15 +24,19 @@ const int MIN_ARGS = 2;
 const string USAGE_ERROR_MESSAGE = "Usage: <substring to search> "
 	"<folders, separated by spaces>";
 
-void handleError(const string funcName)
+
+/**
+ * Handle errors as required
+ */
+static void handleError(const string funcName)
 {
-	std::cerr << "runMapReduceFramework Failure: " << funcName
-		  << " failed." << std::endl;
+	std::cerr << "MapReduceFramework Failure: " << funcName << " failed." 
+	     << std::endl;
 	exit(EXIT_FAIL);
 }
 
 /**
- * 
+ * The directory name key (k1Derived)
  */
 class DirNameKey : public k1Base
 {
@@ -53,6 +60,9 @@ private:
 	const string dirName;
 };
 
+/**
+ * The string to search in the file names
+ */
 class StringToFind : public v1Base
 {
 public:
@@ -66,8 +76,10 @@ private:
 	const string str;
 };
 
-//intermediate key and value.
-//the key, value for the Reduce function created by the Map function
+
+/**
+ * The k2 class (k2Derived) - the filename (inside the input directories)
+ */
 class FileNameKey1 : public k2Base
 {
 public:
@@ -91,20 +103,31 @@ private:
 	const string fileName;
 };
 
+
+/**
+ * The v2 class (v2Derived) - holds a pointer to the k2 for later
+ * deletion 
+ */
 class v2Deriv : public v2Base
 {
 public:
-	FileNameKey1 *k2Pointer;
 	v2Deriv(FileNameKey1 *k2p) : k2Pointer(k2p) {}	
+
 	virtual ~v2Deriv() 
 	{ 
 		delete k2Pointer;
 		k2Pointer = nullptr;
 	}
+private:
+	FileNameKey1 *k2Pointer;
 };
 
-//output key and value
-//the key,value for the Reduce function created by the Map function
+
+
+/**
+ * The k3 class (k3Derived) - the filename (inside the input directories)
+ * This is the same as k2
+ */
 class FileNameKey2 : public k3Base
 {
 public:
@@ -128,6 +151,10 @@ private:
 	const string fileName;
 };
 
+/**
+ * The v3 class (v3Derived) - Holds the number of times the k3 filename 
+ * appeared (in total)
+ */
 class FileCountValue : public v3Base 
 {
 public:
@@ -158,6 +185,7 @@ public:
 	    const DirNameKey* const pdirkey = (const DirNameKey* const)key;
 	    const StringToFind* const ptoFind = 
 		    (const StringToFind* const)val;
+
 	    // Open the directory and iterate over files in it
 	    string dirName = pdirkey->getDirName();
 	    
@@ -186,12 +214,8 @@ public:
 		    }
 		    FileNameKey1* pKey = 
 			    new(std::nothrow) FileNameKey1(pent->d_name);
-		    if (pKey == nullptr)
-		    {
-			    handleError("new");
-		    }
 		    v2Deriv* pVal = new(std::nothrow) v2Deriv(pKey);
-		    if (pVal == nullptr)
+		    if (pKey == nullptr || pVal == nullptr)
 		    {
 			    handleError("new");
 		    }
@@ -230,6 +254,10 @@ public:
     }
 };
 
+
+/**
+ * Delete allocated <k1,v1> <k3,v3> pairs from input/output lists
+ */
 void cleanup(IN_ITEMS_LIST& inItems, OUT_ITEMS_LIST& outItems)
 {
 	for (auto it = inItems.begin(); it != inItems.end(); ++it)
@@ -244,6 +272,9 @@ void cleanup(IN_ITEMS_LIST& inItems, OUT_ITEMS_LIST& outItems)
 	}
 }
 
+/**
+ * Runs the framework and prints the results
+ */
 void runMapReduce(int numOfDirs, string strToFind, 
 		std::vector<string>& dirName)
 {	
@@ -257,9 +288,11 @@ void runMapReduce(int numOfDirs, string strToFind,
 				new StringToFind(strToFind));
 		inItems.push_back(currPair);
 	}
-	OUT_ITEMS_LIST outItems;
+
 	// Run MapReduce
-	outItems = runMapReduceFramework(mapReduce, inItems, THREAD_LEVEL);
+	OUT_ITEMS_LIST outItems =
+		runMapReduceFramework(mapReduce, inItems, THREAD_LEVEL);
+
 	// Print the [sorted] output
 	for (auto it = outItems.begin(); it != outItems.end(); ++it)
 	{
@@ -281,8 +314,9 @@ int main(int argc, char* argv[])
 {
 	if (argc >= MIN_ARGS)
 	{
-		string strToFind = argv[1];
-		std::vector<string> dirNames(argv + 2, argv + argc);
+		string strToFind = argv[ARG_STR_TO_FIND];
+		std::vector<string> dirNames(argv + ARG_DIR_START, argv + argc);
+		// Minus 2 for this file name (Search.cpp) and the str to find
 		runMapReduce(argc - 2, strToFind, dirNames);
 	}
 	else
