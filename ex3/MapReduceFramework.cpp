@@ -23,11 +23,9 @@ using std::pair;
 
 /* == Some constants == */
 #define CHUNK_SIZE 10
-#define SEC_TO_NSEC(x) ((x) * 1000000000)
 #define USEC_TO_NSEC(x) ((x) * 1000)
 #define NANO_IN_SEC 1000000000
-#define TIME_TO_WAIT 0.001
-#define PTHREAD_SUCCESS 0
+#define TIME_TO_WAIT 1000000
 
 #define TIME_FORMAT "[%d.%m.%Y %T]"
 
@@ -170,12 +168,6 @@ void cleanup()
 		mapResultLists[i].second = nullptr;
 		reduceResultLists[i].second = nullptr;
 	}
-	for (auto it = shuffleOut.begin(); it != shuffleOut.end();
-			++it)
-	{
-		delete it->second;
-		it->second = nullptr;
-	}
 	for (auto it = reduceIn.begin(); it != reduceIn.end(); ++it)
 	{
 		delete it->second;
@@ -256,11 +248,11 @@ void* Shuffle(void *)
 		{
 			handleError("gettimeofday");
 		}
-		timeToWake.tv_sec = timeNow.tv_sec + 
-			(USEC_TO_NSEC(timeNow.tv_usec) + 
-			SEC_TO_NSEC(TIME_TO_WAIT)) / NANO_IN_SEC;
+		timeToWake.tv_sec = timeNow.tv_sec +  
+			(USEC_TO_NSEC(timeNow.tv_usec) + TIME_TO_WAIT) / 
+						NANO_IN_SEC;
 		timeToWake.tv_nsec = fmod(USEC_TO_NSEC(timeNow.tv_usec) + 
-			SEC_TO_NSEC(TIME_TO_WAIT), NANO_IN_SEC);
+			TIME_TO_WAIT, NANO_IN_SEC);
 		// Wait for data (or time passing)
 		my_pthread_cond_timedwait(&cv_more_to_shuffle, 
 				&mutex_more_to_shuffle, &timeToWake); 
@@ -429,7 +421,7 @@ OUT_ITEMS_LIST runMapReduceFramework(MapReduceBase &mapReduce,
 	my_pthread_mutex_lock(&mutex_more_to_shuffle); 
 	more_to_shuffle = false;
 	my_pthread_mutex_unlock(&mutex_more_to_shuffle); 
-	//my_pthread_cond_signal(&cv_more_to_shuffle); 
+	my_pthread_cond_signal(&cv_more_to_shuffle); 
 	my_pthread_join(shuffleThread, nullptr); 
 
 	// Stop time measuring
