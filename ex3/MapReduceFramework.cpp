@@ -218,11 +218,16 @@ void* Shuffle(void *arg)
 						     << endl;
 						exit(EXIT_FAIL);
 					}
-					shuffleOut[currKey] = newList;
+					newList->push_back(currVal);
+					shuffleOut.insert(std::make_pair(
+								currKey,
+								newList));
 					newList = nullptr;
 				}
-				// Add the new v2 element to the list
-				shuffleOut[currKey]->push_back(currVal);
+				else
+				{
+					foundList->second->push_back(currVal);
+				}
 			}
 			shuffleCurrIndex[i] = currIdx;
 		}
@@ -348,12 +353,12 @@ OUT_ITEMS_LIST runMapReduceFramework(MapReduceBase &mapReduce,
 	}
 	// "Shuffle" reduce's output!
 	finalize_output();
-	// Clean up
-	cleanup();
 	// Convert to output type and return.
 	OUT_ITEMS_LIST finalOutput(finalOutputMap.size());
 	std::move(finalOutputMap.begin(), finalOutputMap.end(), 
 			finalOutput.begin());
+	// Clean up
+	cleanup();
 	return finalOutput;
 }
 
