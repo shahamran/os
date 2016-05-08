@@ -1,4 +1,4 @@
-CFLAGS=-Wall -Wextra -g -std=c++11 $(INCS)
+CFLAGS=-std=c++11 -Wall -Wextra -g -pthread $(INCS)
 
 # cpp to object files rule
 %.o: %.cpp
@@ -19,9 +19,6 @@ LIBTARGET=MapReduceFramework.a
 all: $(TEST_OBJ)
 
 # library rules
-$(LIBOBJ): $(LIBSRC)
-	$(CXX) $(CFLAGS) -pthread -c $<
-
 $(LIBTARGET): $(LIBOBJ)
 	$(AR) $(ARFLAGS) $@ $^
 	$(RANLIB) $@
@@ -34,7 +31,7 @@ VALGRIND_FLAGS = --leak-check=full --show-possibly-lost=yes \
 		 --show-reachable=yes --undef-value-errors=yes
 
 $(TEST_OBJ): $(LIBTARGET)
-	$(CC) $(CFLAGS) $(TEST_FILE) $(LIBTARGET) -o $@
+	$(CXX) $(CFLAGS) $(TEST_FILE) $(LIBTARGET) -o $@
 
 ValgrindTest: $(TEST_OBJ)
 	valgrind $(VALGRIND_FLAGS) ./$<

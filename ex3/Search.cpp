@@ -16,7 +16,7 @@
 using std::string;
 
 // Constants:
-const int MIN_ARGS = 2;
+const int MIN_ARGS = 3;
 const string USAGE_ERROR_MESSAGE = "Usage: <substring to search> "
 	"<folders, separated by spaces>";
 
@@ -50,6 +50,19 @@ public:
 	}
 private:
 	const string dirName;
+};
+
+class StringToFind : public v1Base
+{
+public:
+	StringToFind(const string toFind) : str(toFind) {}
+
+	string getStr() const
+	{
+		return str;
+	}
+private:
+	const string str;
 };
 
 //intermediate key and value.
@@ -132,11 +145,13 @@ private:
 class MyMapReduce : public MapReduceBase {
 public:
 
-    virtual void Map(const k1Base *const key, const v1Base *const) 
+    virtual void Map(const k1Base *const key, const v1Base *const val) 
 	    const override
     {
 	    // Downcast to k1*
 	    const DirNameKey* const pdirkey = (const DirNameKey* const)key;
+	    const StringToFind* const ptoFind = 
+		    (const StringToFind* const)val;
 	    // Open the directory and iterate over files in it
 	    string dirName = pdirkey->getDirName();
 	    DIR *pdir = opendir(dirName.c_str());
@@ -145,11 +160,18 @@ public:
 		    handleError("opendir");
 	    }
 	    struct dirent *pent = nullptr;
+	    string currFile;
 	    while ( (pent = readdir(pdir)) )
 	    {
+		    currFile = pent->d_name;
 		    // Ignore '.' and '..' folders
-		    if (strcmp(CURR_DIR, pent->d_name) == 0 ||
-			strcmp(PARENT_DIR, pent->d_name) == 0)
+		    if (currFile.compare(CURR_DIR) == 0 ||
+			currFile.compare(PARENT_DIR) == 0)
+		    {
+			    continue;
+		    }
+		    // If searched string was not found, continue.
+		    if (currFile.find(ptoFind->getStr()) == string::npos)
 		    {
 			    continue;
 		    }
@@ -203,6 +225,7 @@ void cleanup(IN_ITEMS_LIST& inItems, OUT_ITEMS_LIST& outItems)
 	for (auto it = inItems.begin(); it != inItems.end(); ++it)
 	{
 		delete it->first;
+		delete it->second;
 	}
 	for (auto it = outItems.begin(); it != outItems.end(); ++it)
 	{
@@ -211,7 +234,8 @@ void cleanup(IN_ITEMS_LIST& inItems, OUT_ITEMS_LIST& outItems)
 	}
 }
 
-void runMapReduce(int numOfDirs, char* dirName[])
+void runMapReduce(int numOfDirs, string strToFind, 
+		std::vector<string>& dirName)
 {	
 	// Prepare the input
 	IN_ITEMS_LIST inItems;
@@ -220,7 +244,7 @@ void runMapReduce(int numOfDirs, char* dirName[])
 	for (int i = 0; i < numOfDirs; ++i)
 	{
 		currPair = std::make_pair(new DirNameKey(dirName[i]),
-				nullptr);
+				new StringToFind(strToFind));
 		inItems.push_back(currPair);
 	}
 	OUT_ITEMS_LIST outItems;
@@ -247,7 +271,9 @@ int main(int argc, char* argv[])
 {
 	if (argc >= MIN_ARGS)
 	{
-		runMapReduce(argc, argv);
+		string strToFind = argv[1];
+		std::vector<string> dirNames(argv + 2, argv + argc);
+		runMapReduce(argc - 2, strToFind, dirNames);
 	}
 	else
 	{
