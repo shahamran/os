@@ -119,12 +119,12 @@ void my_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
 void my_pthread_cond_timedwait(pthread_cond_t *cond,
 		pthread_mutex_t *mutex, const struct timespec *abstime)
 {
-	int ret_code = PTHREAD_SUCCESS;
-	ret_code = pthread_cond_timedwait(cond, mutex, abstime);
-	if (ret_code != PTHREAD_SUCCESS)
+	/* int ret_code = PTHREAD_SUCCESS;
+	ret_code = */pthread_cond_timedwait(cond, mutex, abstime);
+	/* if (ret_code != PTHREAD_SUCCESS)
 	{
 		handleError("pthread_cond_timedwait");
-	}
+	} */
 
 }
 
