@@ -59,7 +59,6 @@ typedef struct MapData
 typedef struct ReduceData
 {
 	MapReduceBase &mapReduce;
-	size_t threadNum;
 	size_t numOfItems;
 	size_t nextToRead;
 	std::ofstream &logofs;
@@ -101,6 +100,7 @@ multimap<k3Base*, v3Base*, ptr_less<k3Base>> finalOutputMap;
 /* Mutexes */
 pthread_mutex_t mutex_map_read;		/* protect input list */
 pthread_mutex_t mutex_em_map;		/* barrier to init maps */
+pthread_mutex_t mutex_er_list;		/* barrier to init reduce dasts */
 pthread_mutex_t mutex_more_to_shuffle;	/* condition of shuffle loop */
 pthread_mutex_t mutex_reduce_read;	/* protect reduce input */
 pthread_mutex_t mutex_log_write;	/* protect writing to log */
@@ -136,6 +136,7 @@ void init(int multiThreadLevel)
 	// Pthread types
 	my_pthread_mutex_init(&mutex_map_read, nullptr);
 	my_pthread_mutex_init(&mutex_em_map, nullptr);
+	my_pthread_mutex_init(&mutex_er_list, nullptr);
 	my_pthread_mutex_init(&mutex_more_to_shuffle, nullptr);
 	my_pthread_cond_init(&cv_more_to_shuffle, nullptr);
 	my_pthread_mutex_init(&mutex_reduce_read, nullptr);
@@ -156,6 +157,7 @@ void cleanup()
 	// Pthread types
 	my_pthread_mutex_destroy(&mutex_map_read);
 	my_pthread_mutex_destroy(&mutex_em_map);
+	my_pthread_mutex_destroy(&mutex_er_list);
 	my_pthread_mutex_destroy(&mutex_more_to_shuffle);
 	my_pthread_cond_destroy(&cv_more_to_shuffle);
 	my_pthread_mutex_destroy(&mutex_reduce_read);
@@ -304,19 +306,9 @@ void* Shuffle(void *)
  */
 void* ExecReduce(void *arg)
 {
+	my_pthread_mutex_lock(&mutex_er_list);
+	my_pthread_mutex_unlock(&mutex_er_list);
 	ReduceData* reducedata = (ReduceData*) arg;
-	// Create this thread's data structure (list of k3,v3)
-	size_t threadNum = reducedata->threadNum;
-	pthread_t tid = pthread_self();
-	if (!pthread_equal(reduceResultLists[threadNum].first, tid))
-	{
-		reduceResultLists[threadNum] = std::make_pair(
-		 tid, new(std::nothrow) K3_V3_LIST);
-		if (reduceResultLists[threadNum].second == nullptr)
-		{
-			handleError("new operator");
-		}
-	}
 	size_t myItems; // The start index for this thread's data
 	// While there's more data to read, read a chunk
 	while ((myItems = reducedata->nextToRead) < reducedata->numOfItems)
@@ -435,22 +427,32 @@ OUT_ITEMS_LIST runMapReduceFramework(MapReduceBase &mapReduce,
 	reduceIn.resize(shuffleOut.size());
 	std::move(shuffleOut.begin(), shuffleOut.end(), reduceIn.begin());
 	// Initialize the reducedata struct
-	ReduceData reducedata = {.mapReduce = mapReduce, .threadNum = 0,
+	ReduceData reducedata = {.mapReduce = mapReduce, 
 		.numOfItems = reduceIn.size(), .nextToRead = 0, .logofs = ofs};
 
 	// Measure reduce time
 	t1 = std::chrono::high_resolution_clock::now();
 	// Reduce!
+	my_pthread_mutex_lock(&mutex_er_list);
 	for (int i = 0; i < multiThreadLevel; ++i)
 	{
 		my_pthread_mutex_lock(&mutex_log_write);
 		ofs << MSG_THREAD_CREATED(THREAD_EXECREDUCE) << getTimeStr()
 			<< endl;
 		my_pthread_mutex_unlock(&mutex_log_write);
-		reducedata.threadNum = i;
 		my_pthread_create(&threadList[i], nullptr, 
 				&ExecReduce, &reducedata); 		
 	}
+	for (int i = 0; i < multiThreadLevel; ++i)
+	{
+		reduceResultLists[i] = std::make_pair(threadList[i], 
+				new(std::nothrow) K3_V3_LIST);
+		if (reduceResultLists[i].second == nullptr)
+		{
+			handleError("new operator");
+		}
+	}
+	my_pthread_mutex_unlock(&mutex_er_list);
 	// Wait for reduce to finish
 	for (int i = 0; i < multiThreadLevel; ++i)
 	{
