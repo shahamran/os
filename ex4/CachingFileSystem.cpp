@@ -6,9 +6,16 @@
 
 #define FUSE_USE_VERSION 26
 
-#include <fuse.h>
-#include <string>
+#include <cstdlib>
+#include <cstdio>
+#include <cerrno>
+#include <fcntl.h>
 #include <cstring>
+#include <unistd.h>
+#include <dirent.h>
+#include <fuse.h>
+
+#include <string>
 #include <climits>
 #include <iostream>
 #include <fstream>
@@ -19,7 +26,7 @@ using namespace std;
 
 typedef struct
 {
-	std::ofstream &logfile;
+	std::ofstream logfile;
 	std::string rootdir;
 } caching_state;
 
@@ -45,6 +52,15 @@ int caching_getattr(const char *path, struct stat *statbuf)
 	char fpath[PATH_MAX];
 	caching_fullpath(fpath, path);
 
+	// Write to log
+	
+	// Fill the statbuf
+	ret = stat(fpath, statbuf);
+	if (ret < 0)
+	{
+		ret = -errno;
+	}
+
 	return ret;
 }
 
@@ -63,7 +79,13 @@ int caching_getattr(const char *path, struct stat *statbuf)
 int caching_fgetattr(const char *path, struct stat *statbuf, 
 		     struct fuse_file_info *fi)
 {
-    return 0;
+	int ret = 0;
+	ret = fstat(fi->fh, statbuf);
+	if (ret < 0)
+	{
+		ret = -errno;
+	}
+	return ret;
 }
 
 /**
@@ -79,7 +101,17 @@ int caching_fgetattr(const char *path, struct stat *statbuf,
  */
 int caching_access(const char *path, int mask)
 {
-    return 0;
+	int ret = 0;
+	char fpath[PATH_MAX];
+	caching_fullpath(fpath, path);
+
+	ret = access(fpath, mask);
+
+	if (ret < 0)
+	{
+		ret = -errno;
+	}
+	return ret;
 }
 
 
@@ -98,7 +130,19 @@ int caching_access(const char *path, int mask)
  */
 int caching_open(const char *path, struct fuse_file_info *fi)
 {
-	return 0;
+	int ret = 0, fd;
+	char fpath[PATH_MAX];
+	caching_fullpath(fpath, path);
+
+	fd = open(fpath, fi->flags);
+	if (fd < 0)
+	{
+		ret = -errno;
+	}
+
+	fi->fh = fd;
+	
+	return ret;
 }
 
 
@@ -151,7 +195,7 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
  */
 int caching_flush(const char *path, struct fuse_file_info *fi)
 {
-    return 0;
+	return 0;
 }
 
 /** Release an open file
@@ -170,7 +214,8 @@ int caching_flush(const char *path, struct fuse_file_info *fi)
  */
 int caching_release(const char *path, struct fuse_file_info *fi)
 {
-	return 0;
+	(void)path;
+	return close(fi->fh);
 }
 
 /** Open directory
@@ -182,7 +227,18 @@ int caching_release(const char *path, struct fuse_file_info *fi)
  */
 int caching_opendir(const char *path, struct fuse_file_info *fi)
 {
-	return 0;
+	DIR *dirp;
+	int ret = 0;
+	char fpath[PATH_MAX];
+	caching_fullpath(fpath, path);
+	dirp = opendir(fpath);
+	if (dirp == nullptr)
+	{
+		ret = -errno;
+	}
+	fi->fh = (intptr_t) dirp;
+
+	return ret;
 }
 
 /** Read directory
@@ -201,7 +257,25 @@ int caching_opendir(const char *path, struct fuse_file_info *fi)
 int caching_readdir(const char *path, void *buf, fuse_fill_dir_t filler, 
 		    off_t offset, struct fuse_file_info *fi)
 {
-	return 0;
+	int ret = 0;
+	DIR *dirp;
+	struct dirent *dent;
+	dirp = (DIR*) (uintptr_t) fi->fh;
+	dent = readdir(dirp);
+	if (dent == nullptr)
+	{
+		return -errno;
+	}
+	while ((dent = readdir(dirp)) != nullptr)
+	{
+		// don't list log
+		//
+		if (filler(buf, dent->d_name, nullptr, 0) != 0)
+		{
+			return -ENOMEM;
+		}
+	}
+	return ret;
 }
 
 /** Release directory
@@ -210,13 +284,18 @@ int caching_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
  */
 int caching_releasedir(const char *path, struct fuse_file_info *fi)
 {
-	return 0;
+	(void)path;
+	return closedir((DIR*) (uintptr_t) fi->fh);
 }
 
 /** Rename a file */
 int caching_rename(const char *path, const char *newpath)
 {
-	return 0;
+	char fpath[PATH_MAX], fnewpath[PATH_MAX];
+	caching_fullpath(fpath, path);
+	caching_fullpath(fnewpath, newpath);
+
+	return rename(fpath, fnewpath);
 }
 
 /**
@@ -252,6 +331,7 @@ If a failure occurs in this function, do nothing
  */
 void caching_destroy(void *userdata)
 {
+	
 }
 
 
@@ -324,7 +404,6 @@ void init_caching_oper()
 //basic main. You need to complete it.
 int main(int argc, char* argv[])
 {
-
 	init_caching_oper();
 	argv[1] = argv[2];
 	for (int i = 2; i< (argc - 1); i++)
