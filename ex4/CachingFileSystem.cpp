@@ -7,11 +7,31 @@
 #define FUSE_USE_VERSION 26
 
 #include <fuse.h>
+#include <string>
+#include <cstring>
+#include <climits>
+#include <iostream>
+#include <fstream>
+
+#define CACHING_STATE ((caching_state*) fuse_get_context()->private_data)
 
 using namespace std;
 
+typedef struct
+{
+	std::ofstream &logfile;
+	std::string rootdir;
+} caching_state;
+
 struct fuse_operations caching_oper;
 
+/**
+ * Returns an absolute path (to fpath) from a relative one (from path)
+ */
+static void caching_fullpath(char fpath[PATH_MAX], const char *path)
+{
+	strcpy(fpath, (CACHING_STATE->rootdir + path).c_str());
+}
 
 /** Get file attributes.
  *
@@ -19,8 +39,13 @@ struct fuse_operations caching_oper;
  * ignored.  The 'st_ino' field is ignored except if the 'use_ino'
  * mount option is given.
  */
-int caching_getattr(const char *path, struct stat *statbuf){
-	return 0;
+int caching_getattr(const char *path, struct stat *statbuf)
+{
+	int ret = 0;
+	char fpath[PATH_MAX];
+	caching_fullpath(fpath, path);
+
+	return ret;
 }
 
 /**
@@ -36,7 +61,8 @@ int caching_getattr(const char *path, struct stat *statbuf){
  * Introduced in version 2.5
  */
 int caching_fgetattr(const char *path, struct stat *statbuf, 
-					struct fuse_file_info *fi){
+		     struct fuse_file_info *fi)
+{
     return 0;
 }
 
@@ -70,7 +96,8 @@ int caching_access(const char *path, int mask)
 
  * Changed in version 2.2
  */
-int caching_open(const char *path, struct fuse_file_info *fi){
+int caching_open(const char *path, struct fuse_file_info *fi)
+{
 	return 0;
 }
 
@@ -93,8 +120,9 @@ int caching_open(const char *path, struct fuse_file_info *fi){
 
  * Changed in version 2.2
  */
-int caching_read(const char *path, char *buf, size_t size, 
-				off_t offset, struct fuse_file_info *fi){
+int caching_read(const char *path, char *buf, size_t size, off_t offset, 
+		 struct fuse_file_info *fi)
+{
 	return 0;
 }
 
@@ -140,7 +168,8 @@ int caching_flush(const char *path, struct fuse_file_info *fi)
  *
  * Changed in version 2.2
  */
-int caching_release(const char *path, struct fuse_file_info *fi){
+int caching_release(const char *path, struct fuse_file_info *fi)
+{
 	return 0;
 }
 
@@ -151,7 +180,8 @@ int caching_release(const char *path, struct fuse_file_info *fi){
  *
  * Introduced in version 2.3
  */
-int caching_opendir(const char *path, struct fuse_file_info *fi){
+int caching_opendir(const char *path, struct fuse_file_info *fi)
+{
 	return 0;
 }
 
@@ -168,9 +198,9 @@ int caching_opendir(const char *path, struct fuse_file_info *fi){
  *
  * Introduced in version 2.3
  */
-int caching_readdir(const char *path, void *buf, 
-					fuse_fill_dir_t filler, 
-					off_t offset, struct fuse_file_info *fi){
+int caching_readdir(const char *path, void *buf, fuse_fill_dir_t filler, 
+		    off_t offset, struct fuse_file_info *fi)
+{
 	return 0;
 }
 
@@ -178,12 +208,14 @@ int caching_readdir(const char *path, void *buf,
  *
  * Introduced in version 2.3
  */
-int caching_releasedir(const char *path, struct fuse_file_info *fi){
+int caching_releasedir(const char *path, struct fuse_file_info *fi)
+{
 	return 0;
 }
 
 /** Rename a file */
-int caching_rename(const char *path, const char *newpath){
+int caching_rename(const char *path, const char *newpath)
+{
 	return 0;
 }
 
@@ -202,7 +234,8 @@ For your task, the function needs to return NULL always
  * Introduced in version 2.3
  * Changed in version 2.6
  */
-void *caching_init(struct fuse_conn_info *conn){
+void *caching_init(struct fuse_conn_info *conn)
+{
 	return NULL;
 }
 
@@ -217,7 +250,8 @@ If a failure occurs in this function, do nothing
  
  * Introduced in version 2.3
  */
-void caching_destroy(void *userdata){
+void caching_destroy(void *userdata)
+{
 }
 
 
@@ -235,8 +269,9 @@ void caching_destroy(void *userdata){
  * 
  * Introduced in version 2.8
  */
-int caching_ioctl (const char *, int cmd, void *arg,
-		struct fuse_file_info *, unsigned int flags, void *data){
+int caching_ioctl(const char *, int cmd, void *arg, struct fuse_file_info *, 
+		  unsigned int flags, void *data)
+{
 	return 0;
 }
 
@@ -287,11 +322,13 @@ void init_caching_oper()
 }
 
 //basic main. You need to complete it.
-int main(int argc, char* argv[]){
+int main(int argc, char* argv[])
+{
 
 	init_caching_oper();
 	argv[1] = argv[2];
-	for (int i = 2; i< (argc - 1); i++){
+	for (int i = 2; i< (argc - 1); i++)
+	{
 		argv[i] = NULL;
 	}
         argv[2] = (char*) "-s";
