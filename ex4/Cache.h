@@ -24,6 +24,10 @@ public:
 	string rootdir;
 	std::ofstream logfile;
 
+	/**
+	 * initialize the rootdir to the given one, open the logfile in append
+	 * mode.
+	 */
 	CachingState(const string& root) : 
 		rootdir(root), logfile(root + "/" LOG_FILE, 
 				std::ofstream::out | std::ofstream::app)
@@ -31,11 +35,17 @@ public:
 	}
 };
 
+/**
+ * Write a line to the log that contains the time and the function name
+ */
 void writeToLog(const string &func)
 {
 	CACHING_STATE->logfile << time(nullptr) << DELIM << func << std::endl;
 }
 
+/**
+ * A data block of a file. See comments on data members for details.
+ */
 class Block
 {
 public:
@@ -49,6 +59,7 @@ public:
 	Block(std::string file, int num) : filename(file), number(num),
 					refCount(DEF_REF_COUNT)
 	{
+		// Allocate aligned block
 		data = (char*) aligned_alloc(Block::size, Block::size);
 		if (data == nullptr)
 		{
@@ -56,6 +67,18 @@ public:
 		}
 	}
 
+	/**
+	 * Move ctor, make sure the moved block's data isn't deleted.
+	 */
+	Block(Block &&other) : filename(other.filename), number(other.number),
+				refCount(other.refCount), data(other.data)
+	{
+		other.data = nullptr;
+	}	
+
+	/**
+	 * Free allocated data
+	 */
 	~Block()
 	{
 		if (data != nullptr)
@@ -67,24 +90,27 @@ public:
 };
 
 typedef std::vector<Block> BlocksCache;
-static BlocksCache cache;
+static BlocksCache cache;		// The data structure for caching
 static size_t newIdx, oldIdx, maxSize;
 
+/**
+ * Choose the block that has the least refcount in the old partition, and
+ * remove it from the cache.
+ */
 void evictBlock()
 {
-	if (cache.size() <= oldIdx)
+	// No need to evict if the cache isn't full.
+	if (cache.size() < maxSize)
 		return;
 
 	std::pair<size_t, int> lfuBlock;
-	size_t cacheSize = cache.size();
-	size_t endIdx = std::min(cacheSize, maxSize);
-	int j = cacheSize;
+	int j = maxSize;
 	
 	lfuBlock.first = 0;
 	lfuBlock.second = cache[0].refCount;
-	for (size_t i = endIdx - 1; i >= oldIdx; --i)
+	for (size_t i = maxSize - 1; i >= oldIdx; --i)
 	{
-		j = cacheSize - i - 1;
+		j = maxSize - i - 1;
 		if (cache[j].refCount < lfuBlock.second)
 		{
 			lfuBlock.first = j;
@@ -94,41 +120,49 @@ void evictBlock()
 	cache.erase(cache.begin() + lfuBlock.first);
 }
 
-void addToCache(Block block)
+/**
+ * Add a block to the cache.
+ */
+void addToCache(Block &&block)
 {
 	if (cache.size() == maxSize)
 	{
 		evictBlock();
 	}
 	
-	cache.push_back(block);
+	cache.push_back(std::move(block));
 }
 
+/**
+ * Search for a block in the cache. If found, move it to the end of the 
+ * vector (top of the stack) and update its refCount.
+ * Return 0 upon success and -1 if the block isn't in the cache.
+ */
 int getBlock(const std::string& fileName, int num)
 {
-	auto itCurrBlock = cache.end();
 	size_t j = 0;	// logical index of the item in the vector
 	for (int i = cache.size() - 1; i >= 0; --i)
 	{
 		j = cache.size() - i - 1;
-		itCurrBlock = cache.begin() + i;
-		if (itCurrBlock->filename.compare(fileName) == 0 &&
-		    itCurrBlock->number == num)
+		if (cache[i].filename.compare(fileName) == 0 &&
+		    cache[i].number == num)
 		{
 			if (j >= newIdx)
 			{
-				++(itCurrBlock->refCount);
+				++cache[i].refCount;
 			}
-			Block currBlock = *itCurrBlock;
-			itCurrBlock->data = nullptr;
-			cache.erase(itCurrBlock);
-			cache.push_back(currBlock);
+			cache.push_back(std::move(cache[i]));
+			cache.erase(cache.begin() + i);
 			return 0;
 		}
 	}
 	return -1;
 }
 
+/**
+ * Check the filename of each block. If it matches the oldName argument,
+ * replace it with newName.
+ */
 void renameInCache(const string &oldName, const string &newName)
 {
 	for (size_t i = 0; i < cache.size(); ++i)
