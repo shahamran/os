@@ -15,6 +15,7 @@
 #include <dirent.h>
 #include <fuse.h>
 
+#include "Cache.h"
 #include <string>
 #include <climits>
 #include <iostream>
@@ -401,9 +402,11 @@ void init_caching_oper()
 	caching_oper.ftruncate = NULL;
 }
 
+
 //basic main. You need to complete it.
 int main(int argc, char* argv[])
 {
+	Cache::Block::size = 0;
 	init_caching_oper();
 	argv[1] = argv[2];
 	for (int i = 2; i< (argc - 1); i++)
