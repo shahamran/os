@@ -13,23 +13,33 @@
 #include <cstring>
 #include <unistd.h>
 #include <dirent.h>
-#include <fuse.h>
 
 #include "Cache.h"
-#include <string>
 #include <climits>
 #include <iostream>
-#include <fstream>
 
-#define CACHING_STATE ((caching_state*) fuse_get_context()->private_data)
+#define NUM_ARGS 6
+#define ROOT_ARG 1
+#define MOUNT_ARG 2
+#define BLOCK_ARG 3
+#define OLD_ARG 4
+#define NEW_ARG 5
+
+#define USAGE_MSG "Usage: CachingFileSystem rootdir mountdir " \
+	"numberOfBlocks fOld fNew"
+#define EXIT_SUCC 0
+#define EXIT_FAIL 1
 
 using namespace std;
 
-typedef struct
+/**
+ * Displays a usage message and exits.
+ */
+void caching_usage()
 {
-	std::ofstream logfile;
-	std::string rootdir;
-} caching_state;
+	cout << USAGE_MSG << endl;
+	exit(EXIT_SUCC);
+}
 
 struct fuse_operations caching_oper;
 
@@ -38,7 +48,7 @@ struct fuse_operations caching_oper;
  */
 static void caching_fullpath(char fpath[PATH_MAX], const char *path)
 {
-	strcpy(fpath, (CACHING_STATE->rootdir + path).c_str());
+	strcpy(fpath, (CACHING_STATE->rootdir + "/" + path).c_str());
 }
 
 /** Get file attributes.
@@ -54,6 +64,7 @@ int caching_getattr(const char *path, struct stat *statbuf)
 	caching_fullpath(fpath, path);
 
 	// Write to log
+	writeToLog("getattr");	
 	
 	// Fill the statbuf
 	ret = stat(fpath, statbuf);
@@ -77,9 +88,12 @@ int caching_getattr(const char *path, struct stat *statbuf)
  *
  * Introduced in version 2.5
  */
-int caching_fgetattr(const char *path, struct stat *statbuf, 
+int caching_fgetattr(const char *, struct stat *statbuf, 
 		     struct fuse_file_info *fi)
 {
+	// Write to log
+	writeToLog("fgetattr");	
+
 	int ret = 0;
 	ret = fstat(fi->fh, statbuf);
 	if (ret < 0)
@@ -102,6 +116,9 @@ int caching_fgetattr(const char *path, struct stat *statbuf,
  */
 int caching_access(const char *path, int mask)
 {
+	// Write to log
+	writeToLog("access");	
+
 	int ret = 0;
 	char fpath[PATH_MAX];
 	caching_fullpath(fpath, path);
@@ -131,6 +148,9 @@ int caching_access(const char *path, int mask)
  */
 int caching_open(const char *path, struct fuse_file_info *fi)
 {
+	// Write to log
+	writeToLog("open");	
+
 	int ret = 0, fd;
 	char fpath[PATH_MAX];
 	caching_fullpath(fpath, path);
@@ -168,6 +188,9 @@ int caching_open(const char *path, struct fuse_file_info *fi)
 int caching_read(const char *path, char *buf, size_t size, off_t offset, 
 		 struct fuse_file_info *fi)
 {
+	// Write to log
+	writeToLog("read");	
+
 	return 0;
 }
 
@@ -196,6 +219,9 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
  */
 int caching_flush(const char *path, struct fuse_file_info *fi)
 {
+	// Write to log
+	writeToLog("flush");	
+
 	return 0;
 }
 
@@ -213,9 +239,11 @@ int caching_flush(const char *path, struct fuse_file_info *fi)
  *
  * Changed in version 2.2
  */
-int caching_release(const char *path, struct fuse_file_info *fi)
+int caching_release(const char *, struct fuse_file_info *fi)
 {
-	(void)path;
+	// Write to log
+	writeToLog("release");	
+
 	return close(fi->fh);
 }
 
@@ -228,6 +256,9 @@ int caching_release(const char *path, struct fuse_file_info *fi)
  */
 int caching_opendir(const char *path, struct fuse_file_info *fi)
 {
+	// Write to log
+	writeToLog("opendir");	
+
 	DIR *dirp;
 	int ret = 0;
 	char fpath[PATH_MAX];
@@ -255,9 +286,12 @@ int caching_opendir(const char *path, struct fuse_file_info *fi)
  *
  * Introduced in version 2.3
  */
-int caching_readdir(const char *path, void *buf, fuse_fill_dir_t filler, 
-		    off_t offset, struct fuse_file_info *fi)
+int caching_readdir(const char *, void *buf, fuse_fill_dir_t filler, 
+		    off_t, struct fuse_file_info *fi)
 {
+	// Write to log
+	writeToLog("readdir");	
+
 	int ret = 0;
 	DIR *dirp;
 	struct dirent *dent;
@@ -270,7 +304,10 @@ int caching_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	while ((dent = readdir(dirp)) != nullptr)
 	{
 		// don't list log
-		//
+		if (strcmp(dent->d_name, LOG_FILE) == 0)
+		{
+			continue;
+		}
 		if (filler(buf, dent->d_name, nullptr, 0) != 0)
 		{
 			return -ENOMEM;
@@ -283,18 +320,24 @@ int caching_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
  *
  * Introduced in version 2.3
  */
-int caching_releasedir(const char *path, struct fuse_file_info *fi)
+int caching_releasedir(const char *, struct fuse_file_info *fi)
 {
-	(void)path;
+	// Write to log
+	writeToLog("releasedir");	
+
 	return closedir((DIR*) (uintptr_t) fi->fh);
 }
 
 /** Rename a file */
 int caching_rename(const char *path, const char *newpath)
 {
+	// Write to log
+	writeToLog("rename");	
+
 	char fpath[PATH_MAX], fnewpath[PATH_MAX];
 	caching_fullpath(fpath, path);
 	caching_fullpath(fnewpath, newpath);
+	renameInCache(fpath, fnewpath);
 
 	return rename(fpath, fnewpath);
 }
@@ -314,7 +357,7 @@ For your task, the function needs to return NULL always
  * Introduced in version 2.3
  * Changed in version 2.6
  */
-void *caching_init(struct fuse_conn_info *conn)
+void *caching_init(struct fuse_conn_info *)
 {
 	return NULL;
 }
@@ -332,7 +375,7 @@ If a failure occurs in this function, do nothing
  */
 void caching_destroy(void *userdata)
 {
-	
+	delete (CachingState*) userdata;	
 }
 
 
@@ -350,9 +393,17 @@ void caching_destroy(void *userdata)
  * 
  * Introduced in version 2.8
  */
-int caching_ioctl(const char *, int cmd, void *arg, struct fuse_file_info *, 
-		  unsigned int flags, void *data)
+int caching_ioctl(const char *, int, void *, struct fuse_file_info *, 
+		  unsigned int, void *)
 {
+	writeToLog("ioctl");	
+
+	for (size_t i = 0; i < cache.size(); ++i)
+	{
+		CACHING_STATE->logfile << cache[i].filename << DELIM 
+			<< cache[i].number + 1 << DELIM 
+			<< cache[i].refCount << endl;
+	}
 	return 0;
 }
 
@@ -403,19 +454,48 @@ void init_caching_oper()
 }
 
 
-//basic main. You need to complete it.
 int main(int argc, char* argv[])
 {
-	Cache::Block::size = 0;
+	// Check that the number of arguments is valid.
+	if (argc < NUM_ARGS)
+	{
+		caching_usage();
+	}
+	// Get the relevant data to variables
+	struct stat sb;
+	string rootdir = argv[ROOT_ARG], mountdir = argv[MOUNT_ARG];
+	maxSize = atoi(argv[BLOCK_ARG]); 
+	double fOld = atof(argv[OLD_ARG]), fNew = atof(argv[NEW_ARG]);
+	newIdx = maxSize * fNew;
+	oldIdx = maxSize * (1 - fOld);
+	// Check if one of the arguments is invalid. Start with directories:
+	if (stat(rootdir.c_str(), &sb) != 0 || !S_ISDIR(sb.st_mode) ||
+	    stat(mountdir.c_str(), &sb) != 0 || !S_ISDIR(sb.st_mode))
+	{
+		caching_usage();		
+	}
+	
+	// Continue with numeric input:
+	if (maxSize <= 0 || fOld > 1 || fOld < 0 || 
+	    fNew > 1 || fNew < 0 || fNew + fOld > 1 ||
+	    newIdx <= 0 || oldIdx >= maxSize) // Size of partitions
+	{
+		caching_usage();
+	}
+	// Init static constant
+	Block::size = sb.st_blksize;
+	CachingState *cachingData = new CachingState(rootdir);
+
 	init_caching_oper();
+
 	argv[1] = argv[2];
-	for (int i = 2; i< (argc - 1); i++)
+	for (int i = 2; i < (argc - 1); i++)
 	{
 		argv[i] = NULL;
 	}
         argv[2] = (char*) "-s";
 	argc = 3;
 
-	int fuse_stat = fuse_main(argc, argv, &caching_oper, NULL);
+	int fuse_stat = fuse_main(argc, argv, &caching_oper, cachingData);
 	return fuse_stat;
 }
