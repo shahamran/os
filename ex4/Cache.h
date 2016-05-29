@@ -53,10 +53,22 @@ public:
 	static size_t size;	// Block size in the filesystem
 
 	std::string filename;	// The file this block belongs to
-	int number;		// The number of block in the file
-	int refCount;		// Reference count
+	size_t number;		// The number of block in the file
+	size_t refCount;	// Reference count
 	char *data;		// The actual (aligned) data of the block
 	size_t written;		// Amount of bytes actually written
+	
+	friend void swap(Block& lhs, Block& rhs)
+	{
+		using std::swap;
+		swap(lhs.filename, rhs.filename);
+		swap(lhs.number, rhs.number);
+		swap(lhs.refCount, rhs.refCount);
+		swap(lhs.written, rhs.written);		
+		char *tmp = lhs.data;
+		lhs.data = rhs.data;
+		rhs.data = tmp;
+	}
 
 	Block(std::string file, int num) : filename(file), number(num),
 					refCount(DEF_REF_COUNT), written(0)
@@ -72,32 +84,20 @@ public:
 	/**
 	 * Copy ctor, copy data to a new allocated memory
 	 */
-	Block(const Block &other) : filename(other.filename),
-			number(other.number), refCount(other.refCount),
-			written(other.written)
+	Block(const Block &other) : Block(other.filename, other.number)
 	{
-		data = (char*) aligned_alloc(Block::size, Block::size);
+		refCount = other.refCount;
+	       	written = other.written;
 		memcpy(data, other.data, Block::size);
 	}
 
 	/**
 	 * Move ctor, make sure the moved block's data isn't deleted.
 	 */
-	Block(Block &&other) : filename(other.filename), number(other.number),
-				refCount(other.refCount), data(other.data),
-				written(other.written)
+	Block(Block&& other)
 	{
+		swap(*this, other);
 		other.data = nullptr;
-	}	
-
-	friend void swap(Block& lhs, Block& rhs)
-	{
-		using std::swap;
-		swap(lhs.filename, rhs.filename);
-		swap(lhs.number, rhs.number);
-		swap(lhs.refCount, rhs.refCount);
-		swap(lhs.data, rhs.data);
-		swap(lhs.written, rhs.written);		
 	}
 
 	Block& operator= (Block other)
@@ -117,6 +117,18 @@ public:
 			data = nullptr;
 		}
 	}
+
+	bool isEqualTo(const Block& other)
+	{
+		return  (filename.compare(other.filename) == 0) &&
+			(number == other.number);
+	}
+
+	bool isEqualTo(const string& otherFile, size_t otherNum)
+	{
+		return (filename.compare(otherFile) == 0) &&
+			number == otherNum;
+	}
 };
 
 size_t Block::size = 0;
@@ -135,21 +147,20 @@ void evictBlock()
 	if (cache.size() < maxSize)
 		return;
 
-	std::pair<size_t, int> lfuBlock;
+	size_t lfuBlockIndex = 0, lfuBlockRef = cache[0].refCount;
+
 	int j = maxSize;
 	
-	lfuBlock.first = 0;
-	lfuBlock.second = cache[0].refCount;
 	for (size_t i = maxSize - 1; i >= oldIdx; --i)
 	{
 		j = maxSize - i - 1;
-		if (cache[j].refCount < lfuBlock.second)
+		if (cache[j].refCount < lfuBlockRef)
 		{
-			lfuBlock.first = j;
-			lfuBlock.second = cache[j].refCount;
+			lfuBlockIndex = j;
+			lfuBlockRef = cache[j].refCount;
 		}
 	}
-	cache.erase(cache.begin() + lfuBlock.first);
+	cache.erase(cache.begin() + lfuBlockIndex);
 }
 
 /**
@@ -162,7 +173,7 @@ void addToCache(Block block)
 		evictBlock();
 	}
 	
-	cache.push_back(std::move(block));
+	cache.push_back(block);
 }
 
 /**
@@ -170,20 +181,19 @@ void addToCache(Block block)
  * vector (top of the stack) and update its refCount.
  * Return 0 upon success and -1 if the block isn't in the cache.
  */
-int getBlock(const std::string& fileName, int num)
+int getBlock(const std::string& fileName, size_t num)
 {
 	size_t j = 0;	// logical index of the item in the vector
 	for (int i = cache.size() - 1; i >= 0; --i)
 	{
 		j = cache.size() - i - 1;
-		if (cache[i].filename.compare(fileName) == 0 &&
-		    cache[i].number == num)
+		if (cache[i].isEqualTo(fileName, num))
 		{
 			if (j >= newIdx)
 			{
 				++cache[i].refCount;
 			}
-			cache.push_back(std::move(cache[i]));
+			cache.push_back(cache[i]);
 			cache.erase(cache.begin() + i);
 			return 0;
 		}
@@ -197,11 +207,13 @@ int getBlock(const std::string& fileName, int num)
  */
 void renameInCache(const string &oldName, const string &newName)
 {
+	size_t found = 0;
 	for (size_t i = 0; i < cache.size(); ++i)
 	{
-		if (cache[i].filename.compare(oldName) == 0)
+		if ((found = cache[i].filename.find(oldName)) != string::npos)
 		{
-			cache[i].filename = newName;
+			cache[i].filename.replace(found, oldName.size(), 
+					newName);
 		}
 	}
 }

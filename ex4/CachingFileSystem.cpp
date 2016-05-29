@@ -243,8 +243,8 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 	char fpath[PATH_MAX];
 	caching_fullpath(fpath, path);
 
-	int bytesRead = 0; // Total bytes read
-	bool reachedEof = false;
+	size_t bytesRead = 0; // Total bytes read
+	bool /*reachedEof = false, */shouldStop = false;
 
 	// Get the file's size
 	struct stat sb;
@@ -252,21 +252,31 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 	{
 		return -errno;
 	}
+
 	size_t fileSize = sb.st_size;
+	
+	if ((size_t)offset >= fileSize)
+	{
+		return 0;
+	}
 
 	// Indices for the first block to read, the last and the current offst
 	size_t endOffset = std::min(offset + size, fileSize), 
 	       startBlock = offset / Block::size,
-	       endBlock = endOffset / Block::size, // Note that end >= start
+	       endBlock = (endOffset - 1) / Block::size, // Note that end >= start
 	       currOff = 0;		// The offset in the FILE (for pread)
 
 	// A buffer that holds the minimal number of entire blocks that 
 	// contain all the data the user wants.
-	char *aligned_buf = (char*)aligned_alloc(Block::size, 
-			Block::size * (endBlock - startBlock + 1));
+	char *aligned_buf = (char*)malloc(Block::size * 
+			(endBlock - startBlock + 1));
 	
 	for (size_t blockNum = startBlock; blockNum <= endBlock; ++blockNum)
 	{
+		if (shouldStop)
+		{
+			break;
+		}
 		currOff = blockNum * Block::size;
 		// If the block's not in the cache, read it from dist and
 		// add it.
@@ -281,7 +291,7 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 			} // From here ret is non-negative...
 			else if (ret == 0)
 			{
-				reachedEof = true;
+				//reachedEof = true;
 				break;
 			}
 			else
@@ -291,7 +301,7 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 			addToCache(std::move(newBlock));
 			if ((size_t)ret < Block::size)
 			{
-				reachedEof = true;
+				shouldStop = true;
 			}
 		}
 		// Now assuming that the relevant block is cached and on top
@@ -302,17 +312,17 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 				cache.back().written);
 		bytesRead += cache.back().written;
 	}
-	// Move data to output buffer and free allocated memory
-	memcpy(buf, aligned_buf + offset % Block::size, endOffset - offset);
-	free(aligned_buf);
 	// Remove the extra data read from the first block
 	bytesRead -= offset % Block::size;
-	if (!reachedEof)
+	if (bytesRead > size)
 	{
 		// remove extra data from last block's end, only if such
 		// exists...
 		bytesRead -= Block::size - endOffset % Block::size;
 	}
+	// Move data to output buffer and free allocated memory
+	memcpy(buf, aligned_buf + offset % Block::size, bytesRead);
+	free(aligned_buf);
 	return bytesRead;
 }
 
@@ -536,13 +546,16 @@ void caching_destroy(void *userdata)
 int caching_ioctl(const char *, int, void *, struct fuse_file_info *, 
 		  unsigned int, void *)
 {
-	cout << "ioctl" << endl; // -------------------------
 	writeToLog("ioctl");	
-	string rel_path;
+	string rel_path, rootpath = CACHING_STATE->rootdir;
 
 	for (size_t i = 0; i < cache.size(); ++i)
 	{
-		rel_path = cache[i].filename.substr(1); // Exclude '/'
+		rel_path = cache[i].filename; // Exclude rootpath
+		if (rel_path.find(rootpath) != string::npos)
+		{
+			rel_path = rel_path.substr(rootpath.length() + 1);
+		}
 		CACHING_STATE->logfile << rel_path << DELIM 
 			<< cache[i].number + 1 << DELIM 
 			<< cache[i].refCount << endl;
