@@ -196,15 +196,19 @@ int caching_open(const char *path, struct fuse_file_info *fi)
 		return -ENOENT;
 	}
 
-	fi->flags = OPEN_FLAGS; // ??? or just read with flags?
+	if ((fi->flags & 3) != O_RDONLY)
+	{
+		return -EACCES;
+	}
 
-	fd = open(fpath, fi->flags);
+	fd = open(fpath, OPEN_FLAGS);
 	if (fd < 0)
 	{
 		ret = -errno;
 	}
 
 	fi->fh = fd;
+	fi->direct_io = 1;
 	
 	return ret;
 }
@@ -231,7 +235,6 @@ int caching_open(const char *path, struct fuse_file_info *fi)
 int caching_read(const char *path, char *buf, size_t size, off_t offset, 
 		 struct fuse_file_info *fi)
 {
-	//cout << "read" << endl; // ----------------------------------------------
 	// Write to log
 	writeToLog("read");
 
@@ -245,22 +248,28 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 
 	// Get the file's size
 	struct stat sb;
-	fstat(fi->fh, &sb);
+	if (fstat(fi->fh, &sb) < 0)
+	{
+		return -errno;
+	}
 	size_t fileSize = sb.st_size;
 
 	// Indices for the first block to read, the last and the current offst
 	size_t endOffset = std::min(offset + size, fileSize), 
 	       startBlock = offset / Block::size,
-	       endBlock = endOffset / Block::size,
-	       currOff = 0;
+	       endBlock = endOffset / Block::size, // Note that end >= start
+	       currOff = 0;		// The offset in the FILE (for pread)
 
-	// A buffer that holds all data the user wants, in entire blocks
+	// A buffer that holds the minimal number of entire blocks that 
+	// contain all the data the user wants.
 	char *aligned_buf = (char*)aligned_alloc(Block::size, 
 			Block::size * (endBlock - startBlock + 1));
 	
 	for (size_t blockNum = startBlock; blockNum <= endBlock; ++blockNum)
 	{
 		currOff = blockNum * Block::size;
+		// If the block's not in the cache, read it from dist and
+		// add it.
 		if (getBlock(fpath, blockNum) < 0)
 		{
 			Block newBlock(fpath, blockNum);
@@ -529,10 +538,12 @@ int caching_ioctl(const char *, int, void *, struct fuse_file_info *,
 {
 	cout << "ioctl" << endl; // -------------------------
 	writeToLog("ioctl");	
+	string rel_path;
 
 	for (size_t i = 0; i < cache.size(); ++i)
 	{
-		CACHING_STATE->logfile << cache[i].filename << DELIM 
+		rel_path = cache[i].filename.substr(1); // Exclude '/'
+		CACHING_STATE->logfile << rel_path << DELIM 
 			<< cache[i].number + 1 << DELIM 
 			<< cache[i].refCount << endl;
 	}
