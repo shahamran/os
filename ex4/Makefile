@@ -1,45 +1,33 @@
-CFLAGS=-std=c++11 -Wall -Wextra -g -pthread $(INCS)
+CFLAGS=-std=c++11 -Wall -Wextra -g `pkg-config fuse --cflags --libs`
 
 # cpp to object files rule
 %.o: %.cpp
 	$(CXX) $(CFLAGS) -c $<
 
-# Library Stuff
-INCS=-I.
-LOADLIBES=-L.
-
-LIBSRC= # TODO
-LIBH= 	# TODO
-LIBOBJ=	# TODO
-ARFLAGS=rvs
-RANLIB=ranlib
-
-LIBTARGET= # TODO
-
 # test rules
-TEST_SRC=# TODO
-TEST_FILE=# TODO
+TEST_SRC=CachingFileSystem.cpp
+TEST_FILE=caching
 VALGRIND_FLAGS = --leak-check=full --show-possibly-lost=yes \
 		 --show-reachable=yes --undef-value-errors=yes
 
-$(TEST_FILE): $(TEST_SRC) $(LIBTARGET) 
-	$(CXX) $(CFLAGS) $(LOADLIBES) $^ -o $@
+$(TEST_FILE): $(TEST_SRC) 
+	$(CXX) -o $@ $(CFLAGS) $^
 
 ValgrindTest: $(TEST_OBJ)
 	valgrind $(VALGRIND_FLAGS) ./$<
 
 
 # library rules
-$(LIBTARGET): $(LIBOBJ)
-	$(AR) $(ARFLAGS) $@ $^
-	$(RANLIB) $@
-
-$(LIBOBJ): $(LIBSRC)
-	$(CXX) $(CFLAGS) -c $< -o $(LIBOBJ)
+#$(LIBTARGET): $(LIBOBJ)
+#	$(AR) $(ARFLAGS) $@ $^
+#	$(RANLIB) $@
+#
+#$(LIBOBJ): $(LIBSRC)
+#	$(CXX) $(CFLAGS) -c $< -o $(LIBOBJ)
 
 # cleaning and such
 RM=rm -fv
-LOG_FILE=# TODO
+LOG_FILE=.filesystem.log
 clean:
 	$(RM) $(TEST_FILE) $(LIBTARGET) *.o $(LOG_FILE)
 

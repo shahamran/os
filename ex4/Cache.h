@@ -69,6 +69,17 @@ public:
 	}
 
 	/**
+	 * Copy ctor, copy data to a new allocated memory
+	 */
+	Block(const Block &other) : filename(other.filename),
+			number(other.number), refCount(other.refCount),
+			written(other.written)
+	{
+		data = (char*) aligned_alloc(Block::size, Block::size);
+		memcpy(data, other.data, Block::size);
+	}
+
+	/**
 	 * Move ctor, make sure the moved block's data isn't deleted.
 	 */
 	Block(Block &&other) : filename(other.filename), number(other.number),
@@ -77,6 +88,12 @@ public:
 	{
 		other.data = nullptr;
 	}	
+
+	Block& operator= (Block other)
+	{
+		*this = Block(std::move(other));
+		return *this;
+	}
 
 	/**
 	 * Free allocated data
@@ -90,6 +107,8 @@ public:
 		}
 	}
 };
+
+size_t Block::size = 0;
 
 typedef std::vector<Block> BlocksCache;
 static BlocksCache cache;		// The data structure for caching

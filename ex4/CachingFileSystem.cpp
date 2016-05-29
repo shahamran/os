@@ -67,6 +67,13 @@ int caching_getattr(const char *path, struct stat *statbuf)
 	// Write to log
 	writeToLog("getattr");	
 	
+	// Make sure this isn't the log file
+	char logpath[PATH_MAX];
+	caching_fullpath(logpath, LOG_FILE);
+	if (strcmp(fpath, logpath) == 0)
+	{
+		return -ENOENT;
+	}	
 	// Fill the statbuf
 	ret = stat(fpath, statbuf);
 	if (ret < 0)
@@ -263,7 +270,7 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
  *
  * Changed in version 2.2
  */
-int caching_flush(const char *path, struct fuse_file_info *fi)
+int caching_flush(const char *, struct fuse_file_info *)
 {
 	// Write to log
 	writeToLog("flush");	
@@ -379,13 +386,17 @@ int caching_rename(const char *path, const char *newpath)
 {
 	// Write to log
 	writeToLog("rename");	
-
+	
+	int ret = 0;
 	char fpath[PATH_MAX], fnewpath[PATH_MAX];
 	caching_fullpath(fpath, path);
 	caching_fullpath(fnewpath, newpath);
-	renameInCache(fpath, fnewpath);
-
-	return rename(fpath, fnewpath);
+	ret = rename(fpath, fnewpath);
+	if (ret == 0)	// Check if renaming failed.
+	{	// otherwise update cache blocks
+		renameInCache(fpath, fnewpath);
+	}
+	return ret;
 }
 
 /**
