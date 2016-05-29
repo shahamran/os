@@ -59,7 +59,7 @@ static void caching_fullpath(char fpath[PATH_MAX], const char *path)
  */
 int caching_getattr(const char *path, struct stat *statbuf)
 {
-	cout << "getattr" << endl; // -------------------------------------------
+	//cout << "getattr" << endl; // -------------------------------------------
 	int ret = 0;
 	char fpath[PATH_MAX];
 	caching_fullpath(fpath, path);
@@ -99,7 +99,7 @@ int caching_getattr(const char *path, struct stat *statbuf)
 int caching_fgetattr(const char *, struct stat *statbuf, 
 		     struct fuse_file_info *fi)
 {
-	cout << "fgetattr" << endl; // ----------------------------------------
+	//cout << "fgetattr" << endl; // ----------------------------------------
 	// Write to log
 	writeToLog("fgetattr");	
 
@@ -125,7 +125,7 @@ int caching_fgetattr(const char *, struct stat *statbuf,
  */
 int caching_access(const char *path, int mask)
 {
-	cout << "access" << endl; // -------------------------------------------------
+	//cout << "access" << endl; // -------------------------------------------------
 	// Write to log
 	writeToLog("access");	
 
@@ -157,7 +157,7 @@ int caching_access(const char *path, int mask)
  */
 int caching_open(const char *path, struct fuse_file_info *fi)
 {
-	cout << "open" << endl; // -----------------------------------------------
+	//cout << "open" << endl; // -----------------------------------------------
 	// Write to log
 	writeToLog("open");	
 
@@ -199,7 +199,7 @@ int caching_open(const char *path, struct fuse_file_info *fi)
 int caching_read(const char *path, char *buf, size_t size, off_t offset, 
 		 struct fuse_file_info *fi)
 {
-	cout << "read" << endl; // ----------------------------------------------
+	//cout << "read" << endl; // ----------------------------------------------
 	// Write to log
 	writeToLog("read");
 
@@ -209,6 +209,7 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 	caching_fullpath(fpath, path);
 
 	int bytesRead = 0; // Total bytes read
+	bool reachedEof = false;
 	// Indices for the first block to read, the last and the current offst
 	size_t startBlock = offset / Block::size,
 	       endBlock = (offset + size) / Block::size,
@@ -244,14 +245,22 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 		bytesRead += cache.back().written;
 		if (cache.back().written == 0)
 		{
+			reachedEof = true;
 			break;
 		}
 	}
 	// Move data to output buffer and free allocated memory
 	memcpy(buf, aligned_buf + offset, size);
 	free(aligned_buf);
-	return bytesRead - (offset - startBlock * Block::size)
-		- (endBlock * Block::size - (offset + size));
+	// Remove the extra data read from the first block
+	bytesRead -= offset - startBlock * Block::size;
+	if (!reachedEof)
+	{
+		// remove extra data from last block's end, only if such
+		// exists...
+		bytesRead -= (endBlock + 1) * Block::size - (offset + size);
+	}
+	return bytesRead;
 }
 
 /** Possibly flush cached data
@@ -279,7 +288,7 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
  */
 int caching_flush(const char *, struct fuse_file_info *)
 {
-	cout << "flush" << endl; // ----------------------------------------------
+	//cout << "flush" << endl; // ----------------------------------------------
 	// Write to log
 	writeToLog("flush");	
 
@@ -302,7 +311,7 @@ int caching_flush(const char *, struct fuse_file_info *)
  */
 int caching_release(const char *, struct fuse_file_info *fi)
 {
-	cout << "release" << endl; // ------------------------------------------
+	//cout << "release" << endl; // ------------------------------------------
 	// Write to log
 	writeToLog("release");	
 
@@ -318,7 +327,7 @@ int caching_release(const char *, struct fuse_file_info *fi)
  */
 int caching_opendir(const char *path, struct fuse_file_info *fi)
 {
-	cout << "opendir" << endl; 		// -------------------------------
+	//cout << "opendir" << endl; 		// -------------------------------
 	// Write to log
 	writeToLog("opendir");	
 
@@ -352,7 +361,7 @@ int caching_opendir(const char *path, struct fuse_file_info *fi)
 int caching_readdir(const char *, void *buf, fuse_fill_dir_t filler, 
 		    off_t, struct fuse_file_info *fi)
 {
-	cout << "readdir" << endl;				// ---------------------
+	//cout << "readdir" << endl;				// ---------------------
 	// Write to log
 	writeToLog("readdir");	
 
@@ -386,7 +395,7 @@ int caching_readdir(const char *, void *buf, fuse_fill_dir_t filler,
  */
 int caching_releasedir(const char *, struct fuse_file_info *fi)
 {
-	cout << "releasedir" << endl; 					// ---------
+	//cout << "releasedir" << endl; 					// ---------
 	// Write to log
 	writeToLog("releasedir");	
 
@@ -396,7 +405,7 @@ int caching_releasedir(const char *, struct fuse_file_info *fi)
 /** Rename a file */
 int caching_rename(const char *path, const char *newpath)
 {
-	cout << "rename" << endl;			// -----------------------
+	//cout << "rename" << endl;			// -----------------------
 	// Write to log
 	writeToLog("rename");	
 	

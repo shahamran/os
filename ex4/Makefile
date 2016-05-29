@@ -1,17 +1,17 @@
-CFLAGS=-std=c++11 -Wall -Wextra -g `pkg-config fuse --cflags --libs`
+CFLAGS=-std=c++11 -Wall -Wextra -g $$(pkg-config fuse --cflags --libs)
 
 # cpp to object files rule
 %.o: %.cpp
 	$(CXX) $(CFLAGS) -c $<
 
 # test rules
-TEST_SRC=CachingFileSystem.cpp
+TEST_SRC=CachingFileSystem.cpp Cache.h
 TEST_FILE=caching
 VALGRIND_FLAGS = --leak-check=full --show-possibly-lost=yes \
 		 --show-reachable=yes --undef-value-errors=yes
 
 $(TEST_FILE): $(TEST_SRC) 
-	$(CXX) -o $@ $(CFLAGS) $^
+	$(CXX) -o $@ $(CFLAGS) $<
 
 ValgrindTest: $(TEST_OBJ)
 	valgrind $(VALGRIND_FLAGS) ./$<
