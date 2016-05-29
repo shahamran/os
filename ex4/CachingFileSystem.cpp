@@ -16,7 +16,6 @@
 
 #include "Cache.h"
 #include <climits>
-#include <iostream>
 
 #define NUM_ARGS 6
 #define ROOT_ARG 1
@@ -60,6 +59,7 @@ static void caching_fullpath(char fpath[PATH_MAX], const char *path)
  */
 int caching_getattr(const char *path, struct stat *statbuf)
 {
+	cout << "getattr" << endl; // -------------------------------------------
 	int ret = 0;
 	char fpath[PATH_MAX];
 	caching_fullpath(fpath, path);
@@ -75,7 +75,7 @@ int caching_getattr(const char *path, struct stat *statbuf)
 		return -ENOENT;
 	}	
 	// Fill the statbuf
-	ret = stat(fpath, statbuf);
+	ret = lstat(fpath, statbuf);
 	if (ret < 0)
 	{
 		ret = -errno;
@@ -99,6 +99,7 @@ int caching_getattr(const char *path, struct stat *statbuf)
 int caching_fgetattr(const char *, struct stat *statbuf, 
 		     struct fuse_file_info *fi)
 {
+	cout << "fgetattr" << endl; // ----------------------------------------
 	// Write to log
 	writeToLog("fgetattr");	
 
@@ -124,13 +125,13 @@ int caching_fgetattr(const char *, struct stat *statbuf,
  */
 int caching_access(const char *path, int mask)
 {
+	cout << "access" << endl; // -------------------------------------------------
 	// Write to log
 	writeToLog("access");	
 
 	int ret = 0;
 	char fpath[PATH_MAX];
 	caching_fullpath(fpath, path);
-
 	ret = access(fpath, mask);
 
 	if (ret < 0)
@@ -156,6 +157,7 @@ int caching_access(const char *path, int mask)
  */
 int caching_open(const char *path, struct fuse_file_info *fi)
 {
+	cout << "open" << endl; // -----------------------------------------------
 	// Write to log
 	writeToLog("open");	
 
@@ -197,6 +199,7 @@ int caching_open(const char *path, struct fuse_file_info *fi)
 int caching_read(const char *path, char *buf, size_t size, off_t offset, 
 		 struct fuse_file_info *fi)
 {
+	cout << "read" << endl; // ----------------------------------------------
 	// Write to log
 	writeToLog("read");
 
@@ -239,6 +242,10 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 		memcpy(aligned_buf + currOff, cache.back().data,
 				cache.back().written);
 		bytesRead += cache.back().written;
+		if (cache.back().written == 0)
+		{
+			break;
+		}
 	}
 	// Move data to output buffer and free allocated memory
 	memcpy(buf, aligned_buf + offset, size);
@@ -272,6 +279,7 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
  */
 int caching_flush(const char *, struct fuse_file_info *)
 {
+	cout << "flush" << endl; // ----------------------------------------------
 	// Write to log
 	writeToLog("flush");	
 
@@ -294,6 +302,7 @@ int caching_flush(const char *, struct fuse_file_info *)
  */
 int caching_release(const char *, struct fuse_file_info *fi)
 {
+	cout << "release" << endl; // ------------------------------------------
 	// Write to log
 	writeToLog("release");	
 
@@ -309,6 +318,7 @@ int caching_release(const char *, struct fuse_file_info *fi)
  */
 int caching_opendir(const char *path, struct fuse_file_info *fi)
 {
+	cout << "opendir" << endl; 		// -------------------------------
 	// Write to log
 	writeToLog("opendir");	
 
@@ -342,6 +352,7 @@ int caching_opendir(const char *path, struct fuse_file_info *fi)
 int caching_readdir(const char *, void *buf, fuse_fill_dir_t filler, 
 		    off_t, struct fuse_file_info *fi)
 {
+	cout << "readdir" << endl;				// ---------------------
 	// Write to log
 	writeToLog("readdir");	
 
@@ -375,6 +386,7 @@ int caching_readdir(const char *, void *buf, fuse_fill_dir_t filler,
  */
 int caching_releasedir(const char *, struct fuse_file_info *fi)
 {
+	cout << "releasedir" << endl; 					// ---------
 	// Write to log
 	writeToLog("releasedir");	
 
@@ -384,6 +396,7 @@ int caching_releasedir(const char *, struct fuse_file_info *fi)
 /** Rename a file */
 int caching_rename(const char *path, const char *newpath)
 {
+	cout << "rename" << endl;			// -----------------------
 	// Write to log
 	writeToLog("rename");	
 	
@@ -416,7 +429,8 @@ For your task, the function needs to return NULL always
  */
 void *caching_init(struct fuse_conn_info *)
 {
-	return NULL;
+	cout << "caching_init" << endl; // -------------------------
+	return CACHING_STATE;
 }
 
 
@@ -432,6 +446,7 @@ If a failure occurs in this function, do nothing
  */
 void caching_destroy(void *userdata)
 {
+	cout << "caching_destroy" << endl; // -------------------------
 	delete (CachingState*) userdata;	
 }
 
@@ -453,6 +468,7 @@ void caching_destroy(void *userdata)
 int caching_ioctl(const char *, int, void *, struct fuse_file_info *, 
 		  unsigned int, void *)
 {
+	cout << "ioctl" << endl; // -------------------------
 	writeToLog("ioctl");	
 
 	for (size_t i = 0; i < cache.size(); ++i)
@@ -551,8 +567,11 @@ int main(int argc, char* argv[])
 		argv[i] = NULL;
 	}
         argv[2] = (char*) "-s";
+	//argv[3] = (char*) "-f"; // Change before submission - delete this and change argc to 3
+	//argc = 4;
 	argc = 3;
-
+	
+	cout << "Calling fuse_main... " << endl; // -------------------------
 	int fuse_stat = fuse_main(argc, argv, &caching_oper, cachingData);
 	return fuse_stat;
 }
