@@ -55,7 +55,15 @@ static void caching_fullpath(char fpath[PATH_MAX], const char *path)
 			[](char a, char b)
 			{return a == '/' && b == '/';});
 	fullpath.erase(end, fullpath.end());
+	// Return full path as c_str
 	strcpy(fpath, fullpath.c_str());
+}
+
+static bool is_log_path(const char *path)
+{
+	char logpath[PATH_MAX];
+	caching_fullpath(logpath, LOG_FILE);
+	return strcmp(path, logpath) == 0;
 }
 
 /** Get file attributes.
@@ -75,9 +83,7 @@ int caching_getattr(const char *path, struct stat *statbuf)
 	writeToLog("getattr");	
 	
 	// Make sure this isn't the log file
-	char logpath[PATH_MAX];
-	caching_fullpath(logpath, LOG_FILE);
-	if (strcmp(fpath, logpath) == 0)
+	if (is_log_path(fpath))
 	{
 		return -ENOENT;
 	}	
@@ -139,6 +145,12 @@ int caching_access(const char *path, int mask)
 	int ret = 0;
 	char fpath[PATH_MAX];
 	caching_fullpath(fpath, path);
+	// Make sure this isn't the log file
+	if (is_log_path(fpath))
+	{
+		return -ENOENT;
+	}
+
 	ret = access(fpath, mask);
 
 	if (ret < 0)
@@ -171,6 +183,13 @@ int caching_open(const char *path, struct fuse_file_info *fi)
 	int ret = 0, fd;
 	char fpath[PATH_MAX];
 	caching_fullpath(fpath, path);
+
+	// Make sure this isn't the log file
+	if (is_log_path(fpath))
+	{
+		return -ENOENT;
+	}
+
 	fi->flags = OPEN_FLAGS; // ??? or just read with flags?
 
 	fd = open(fpath, fi->flags);
@@ -255,6 +274,10 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 				newBlock.written = ret;
 			}
 			addToCache(std::move(newBlock));
+			if (ret < Block::size)
+			{
+				reachedEof = true;
+			}
 		}
 		// Now assuming that the relevant block is cached and on top
 		// of the stack (back of the cache vector), copy the data
@@ -273,7 +296,7 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 	{
 		// remove extra data from last block's end, only if such
 		// exists...
-		bytesRead -= Block::size - (offset + size) % Block::size;
+		bytesRead -= Block::size - endOffset % Block::size;
 	}
 	return bytesRead;
 }
@@ -427,6 +450,12 @@ int caching_rename(const char *path, const char *newpath)
 	int ret = 0;
 	char fpath[PATH_MAX], fnewpath[PATH_MAX];
 	caching_fullpath(fpath, path);
+	// Make sure the oldpath isn't the log file
+	if (is_log_path(fpath))
+	{
+		return -ENOENT;
+	}
+
 	caching_fullpath(fnewpath, newpath);
 	ret = rename(fpath, fnewpath);
 	if (ret == 0)	// Check if renaming failed.
@@ -595,7 +624,7 @@ int main(int argc, char* argv[])
 	//argc = 4;
 	argc = 3;
 	
-	cout << "Calling fuse_main... " << endl; // -------------------------
+	//cout << "Calling fuse_main... " << endl; // -------------------------
 	int fuse_stat = fuse_main(argc, argv, &caching_oper, cachingData);
 	return fuse_stat;
 }
