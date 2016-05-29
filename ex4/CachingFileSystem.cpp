@@ -46,11 +46,17 @@ struct fuse_operations caching_oper;
 
 /**
  * Returns an absolute path (to fpath) from a relative one (from path)
+ * If path doesn't point to a file, return -ENOENT, otherwise, returns
+ * 0 and sets fpath to the full absolute path.
  */
 static void caching_fullpath(char fpath[PATH_MAX], const char *path)
 {
-	string fullpath = CACHING_STATE->rootdir + "/" + path;
-	// Remove doulbe slashes...
+	// Get absolute path from the given path
+	// (note that this is absolute from mountdir root)
+	char abspath[PATH_MAX];
+	realpath(path, abspath);
+	string fullpath = CACHING_STATE->rootdir + "/" + abspath;
+	// Remove double slashes...
 	auto end = std::unique(fullpath.begin(), fullpath.end(),
 			[](char a, char b)
 			{return a == '/' && b == '/';});
@@ -263,7 +269,7 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 			if (ret < 0)
 			{
 				return -errno;
-			}
+			} // From here ret is non-negative...
 			else if (ret == 0)
 			{
 				reachedEof = true;
@@ -274,7 +280,7 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 				newBlock.written = ret;
 			}
 			addToCache(std::move(newBlock));
-			if (ret < Block::size)
+			if ((size_t)ret < Block::size)
 			{
 				reachedEof = true;
 			}
@@ -587,28 +593,34 @@ int main(int argc, char* argv[])
 	{
 		caching_usage();
 	}
+	
+	struct stat sb; // For block size and dir checks
+	
 	// Get the relevant data to variables
-	struct stat sb;
+	char absrootdir[PATH_MAX], absmountdir[PATH_MAX];
 	string rootdir = argv[ROOT_ARG], mountdir = argv[MOUNT_ARG];
+	// Check that paths exist and are directories
+	if (realpath(argv[ROOT_ARG], absrootdir) == nullptr ||
+	    realpath(argv[MOUNT_ARG], absmountdir) == nullptr ||
+	    stat(absrootdir, &sb) != 0 || !S_ISDIR(sb.st_mode) ||
+	    stat(absmountdir, &sb) != 0 || !S_ISDIR(sb.st_mode))
+	{
+		caching_usage();
+	}
+	rootdir = absrootdir; mountdir = absmountdir;
+
 	maxSize = atoi(argv[BLOCK_ARG]); 
 	double fOld = atof(argv[OLD_ARG]), fNew = atof(argv[NEW_ARG]);
 	newIdx = maxSize * fNew;
 	oldIdx = maxSize * (1 - fOld);
-	// Check if one of the arguments is invalid. Start with directories:
-	if (stat(rootdir.c_str(), &sb) != 0 || !S_ISDIR(sb.st_mode) ||
-	    stat(mountdir.c_str(), &sb) != 0 || !S_ISDIR(sb.st_mode))
-	{
-		caching_usage();		
-	}
-	
-	// Continue with numeric input:
+	// Check if one of the arguments is invalid.
 	if (maxSize <= 0 || fOld > 1 || fOld < 0 || 
 	    fNew > 1 || fNew < 0 || fNew + fOld > 1 ||
 	    newIdx <= 0 || oldIdx >= maxSize) // Size of partitions
 	{
 		caching_usage();
 	}
-	// Init static constant
+	// Init static constant and private data
 	Block::size = sb.st_blksize;
 	CachingState *cachingData = new CachingState(rootdir);
 
