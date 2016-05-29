@@ -16,6 +16,7 @@
 
 #include "Cache.h"
 #include <climits>
+#include <algorithm>
 
 #define NUM_ARGS 6
 #define ROOT_ARG 1
@@ -48,7 +49,13 @@ struct fuse_operations caching_oper;
  */
 static void caching_fullpath(char fpath[PATH_MAX], const char *path)
 {
-	strcpy(fpath, (CACHING_STATE->rootdir + "/" + path).c_str());
+	string fullpath = CACHING_STATE->rootdir + "/" + path;
+	// Remove doulbe slashes...
+	auto end = std::unique(fullpath.begin(), fullpath.end(),
+			[](char a, char b)
+			{return a == '/' && b == '/';});
+	fullpath.erase(end, fullpath.end());
+	strcpy(fpath, fullpath.c_str());
 }
 
 /** Get file attributes.
@@ -210,10 +217,18 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 
 	int bytesRead = 0; // Total bytes read
 	bool reachedEof = false;
+
+	// Get the file's size
+	struct stat sb;
+	fstat(fi->fh, &sb);
+	size_t fileSize = sb.st_size;
+
 	// Indices for the first block to read, the last and the current offst
-	size_t startBlock = offset / Block::size,
-	       endBlock = (offset + size) / Block::size,
+	size_t endOffset = std::min(offset + size, fileSize), 
+	       startBlock = offset / Block::size,
+	       endBlock = endOffset / Block::size,
 	       currOff = 0;
+
 	// A buffer that holds all data the user wants, in entire blocks
 	char *aligned_buf = (char*)aligned_alloc(Block::size, 
 			Block::size * (endBlock - startBlock + 1));
@@ -224,41 +239,41 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 		if (getBlock(fpath, blockNum) < 0)
 		{
 			Block newBlock(fpath, blockNum);
-			ret = pread(fi->fh, newBlock.data,
-					Block::size, currOff);
+			ret = pread(fi->fh, newBlock.data, Block::size, 
+					currOff);
 			if (ret < 0)
 			{
 				return -errno;
 			}
+			else if (ret == 0)
+			{
+				reachedEof = true;
+				break;
+			}
 			else
 			{
 				newBlock.written = ret;
-				bytesRead += ret;
 			}
 			addToCache(std::move(newBlock));
 		}
 		// Now assuming that the relevant block is cached and on top
 		// of the stack (back of the cache vector), copy the data
 		// from the cached block to the buffer.
-		memcpy(aligned_buf + currOff, cache.back().data,
+		memcpy(aligned_buf + (blockNum - startBlock) * Block::size, 
+				cache.back().data,
 				cache.back().written);
 		bytesRead += cache.back().written;
-		if (cache.back().written == 0)
-		{
-			reachedEof = true;
-			break;
-		}
 	}
 	// Move data to output buffer and free allocated memory
-	memcpy(buf, aligned_buf + offset, size);
+	memcpy(buf, aligned_buf + offset % Block::size, endOffset - offset);
 	free(aligned_buf);
 	// Remove the extra data read from the first block
-	bytesRead -= offset - startBlock * Block::size;
+	bytesRead -= offset % Block::size;
 	if (!reachedEof)
 	{
 		// remove extra data from last block's end, only if such
 		// exists...
-		bytesRead -= (endBlock + 1) * Block::size - (offset + size);
+		bytesRead -= Block::size - (offset + size) % Block::size;
 	}
 	return bytesRead;
 }

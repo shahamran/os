@@ -90,9 +90,19 @@ public:
 		other.data = nullptr;
 	}	
 
+	friend void swap(Block& lhs, Block& rhs)
+	{
+		using std::swap;
+		swap(lhs.filename, rhs.filename);
+		swap(lhs.number, rhs.number);
+		swap(lhs.refCount, rhs.refCount);
+		swap(lhs.data, rhs.data);
+		swap(lhs.written, rhs.written);		
+	}
+
 	Block& operator= (Block other)
 	{
-		*this = Block(std::move(other));
+		swap(*this, other);
 		return *this;
 	}
 
@@ -145,7 +155,7 @@ void evictBlock()
 /**
  * Add a block to the cache.
  */
-void addToCache(Block &&block)
+void addToCache(Block block)
 {
 	if (cache.size() == maxSize)
 	{
