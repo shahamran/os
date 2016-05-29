@@ -55,9 +55,10 @@ public:
 	int number;		// The number of block in the file
 	int refCount;		// Reference count
 	char *data;		// The actual (aligned) data of the block
+	size_t written;		// Amount of bytes actually written
 
 	Block(std::string file, int num) : filename(file), number(num),
-					refCount(DEF_REF_COUNT)
+					refCount(DEF_REF_COUNT), written(0)
 	{
 		// Allocate aligned block
 		data = (char*) aligned_alloc(Block::size, Block::size);
@@ -71,7 +72,8 @@ public:
 	 * Move ctor, make sure the moved block's data isn't deleted.
 	 */
 	Block(Block &&other) : filename(other.filename), number(other.number),
-				refCount(other.refCount), data(other.data)
+				refCount(other.refCount), data(other.data),
+				written(other.written)
 	{
 		other.data = nullptr;
 	}	

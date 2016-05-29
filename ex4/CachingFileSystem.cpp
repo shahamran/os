@@ -29,6 +29,7 @@
 	"numberOfBlocks fOld fNew"
 #define EXIT_SUCC 0
 #define EXIT_FAIL 1
+#define OPEN_FLAGS O_RDONLY | O_DIRECT | O_SYNC
 
 using namespace std;
 
@@ -154,6 +155,7 @@ int caching_open(const char *path, struct fuse_file_info *fi)
 	int ret = 0, fd;
 	char fpath[PATH_MAX];
 	caching_fullpath(fpath, path);
+	fi->flags = OPEN_FLAGS; // ??? or just read with flags?
 
 	fd = open(fpath, fi->flags);
 	if (fd < 0)
@@ -189,9 +191,53 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 		 struct fuse_file_info *fi)
 {
 	// Write to log
-	writeToLog("read");	
+	writeToLog("read");
 
-	return 0;
+	int ret = 0;
+
+	char fpath[PATH_MAX];
+	caching_fullpath(fpath, path);
+
+	int bytesRead = 0; // Total bytes read
+	// Indices for the first block to read, the last and the current offst
+	size_t startBlock = offset / Block::size,
+	       endBlock = (offset + size) / Block::size,
+	       currOff = 0;
+	// A buffer that holds all data the user wants, in entire blocks
+	char *aligned_buf = (char*)aligned_alloc(Block::size, 
+			Block::size * (endBlock - startBlock + 1));
+	
+	for (size_t blockNum = startBlock; blockNum <= endBlock; ++blockNum)
+	{
+		currOff = blockNum * Block::size;
+		if (getBlock(fpath, blockNum) < 0)
+		{
+			Block newBlock(fpath, blockNum);
+			ret = pread(fi->fh, newBlock.data,
+					Block::size, currOff);
+			if (ret < 0)
+			{
+				return -errno;
+			}
+			else
+			{
+				newBlock.written = ret;
+				bytesRead += ret;
+			}
+			addToCache(std::move(newBlock));
+		}
+		// Now assuming that the relevant block is cached and on top
+		// of the stack (back of the cache vector), copy the data
+		// from the cached block to the buffer.
+		memcpy(aligned_buf + currOff, cache.back().data,
+				cache.back().written);
+		bytesRead += cache.back().written;
+	}
+	// Move data to output buffer and free allocated memory
+	memcpy(buf, aligned_buf + offset, size);
+	free(aligned_buf);
+	return bytesRead - (offset - startBlock * Block::size)
+		- (endBlock * Block::size - (offset + size));
 }
 
 /** Possibly flush cached data
