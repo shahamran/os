@@ -12,6 +12,8 @@ using std::string;
 using std::vector;
 
 #define DEF_REF_COUNT 1
+#define NOT_IN_CACHE -1
+#define IN_CACHE 0
 #define LOG_FILE ".filesystem.log"
 #define DELIM " "
 #define CACHING_STATE ((CachingState*) fuse_get_context()->private_data)
@@ -58,6 +60,9 @@ public:
 	char *data;		// The actual (aligned) data of the block
 	size_t written;		// Amount of bytes actually written
 	
+	/**
+	 * For move ctor... "Steal" data from other block.
+	 */ 
 	friend void swap(Block& lhs, Block& rhs)
 	{
 		using std::swap;
@@ -69,7 +74,13 @@ public:
 		lhs.data = rhs.data;
 		rhs.data = tmp;
 	}
-
+	
+	/**
+	 * Constructs a new Block object.
+	 * This blocks belongs to filename 'file', and is the 'num' block
+	 * for this file (starting from 0).
+	 * Default refCount is 1, no data is written.
+	 */
 	Block(std::string file, int num) : filename(file), number(num),
 					refCount(DEF_REF_COUNT), written(0)
 	{
@@ -82,7 +93,7 @@ public:
 	}
 
 	/**
-	 * Copy ctor, copy data to a new allocated memory
+	 * (Deep-)Copy ctor, copy data to a new allocated memory
 	 */
 	Block(const Block &other) : Block(other.filename, other.number)
 	{
@@ -100,6 +111,12 @@ public:
 		other.data = nullptr;
 	}
 
+	/**
+	 * Note that the other block is delivered by value, so it's OK to
+	 * steal its data.
+	 * The idea here is that the argument that's copied by value is
+	 * actually moved there, and not deep copied.
+	 */
 	Block& operator= (Block other)
 	{
 		swap(*this, other);
@@ -107,7 +124,7 @@ public:
 	}
 
 	/**
-	 * Free allocated data
+	 * Free allocated data.
 	 */
 	~Block()
 	{
@@ -117,7 +134,10 @@ public:
 			data = nullptr;
 		}
 	}
-
+	
+	/**
+	 * Not actually needed.
+	 */
 	bool isEqualTo(const Block& other)
 	{
 		return  (filename.compare(other.filename) == 0) &&
@@ -125,12 +145,15 @@ public:
 			 written == other.written);
 	}
 
+	/**
+	 * Checks if this block is the one with the given filename and number
+	 */
 	bool isEqualTo(const string& otherFile, size_t otherNum)
 	{
 		// Check whether the filename and block number match and
 		// if this is a fully written block.
 		return (filename.compare(otherFile) == 0) &&
-			number == otherNum && written == Block::size;
+			number == otherNum;
 	}
 };
 
@@ -138,11 +161,15 @@ size_t Block::size = 0;
 
 typedef std::vector<Block> BlocksCache;
 static BlocksCache cache;		// The data structure for caching
-static size_t newIdx, oldIdx, maxSize;
+static size_t newIdx, oldIdx, maxSize;	// Parameters for the caching
+					// algorithm.
 
 /**
  * Choose the block that has the least refcount in the old partition, and
  * remove it from the cache.
+ * Note that we start looking for blocks to evict from the LRU to MRU,
+ * thus if two blocks are identicals in terms of refCount, the LRU one will
+ * be evicted.
  */
 void evictBlock()
 {
@@ -151,9 +178,10 @@ void evictBlock()
 		return;
 
 	size_t lfuBlockIndex = 0, lfuBlockRef = cache[0].refCount;
-
+	// j is the real index in the vector.
+	// i is the logical index.
 	int j = maxSize;
-	
+	// Find the block with the minimal refCount in the old partition
 	for (size_t i = maxSize - 1; i >= oldIdx; --i)
 	{
 		j = maxSize - i - 1;
@@ -163,6 +191,7 @@ void evictBlock()
 			lfuBlockRef = cache[j].refCount;
 		}
 	}
+	// Delete it.
 	cache.erase(cache.begin() + lfuBlockIndex);
 }
 
@@ -198,10 +227,10 @@ int getBlock(const std::string& fileName, size_t num)
 			}
 			cache.push_back(cache[i]);
 			cache.erase(cache.begin() + i);
-			return 0;
+			return IN_CACHE;
 		}
 	}
-	return -1;
+	return NOT_IN_CACHE;
 }
 
 /**

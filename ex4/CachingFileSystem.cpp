@@ -1,9 +1,3 @@
-/*
- * CachingFileSystem.cpp
- *
- *  Author: Netanel Zakay, HUJI, 67808  (Operating Systems 2015-2016).
- */
-
 #define FUSE_USE_VERSION 26
 
 #include <cstdlib>
@@ -17,24 +11,29 @@
 #include "Cache.h"
 #include <climits>
 #include <algorithm>
-
+// CL Arguments
 #define NUM_ARGS 6
 #define ROOT_ARG 1
 #define MOUNT_ARG 2
 #define BLOCK_ARG 3
 #define OLD_ARG 4
 #define NEW_ARG 5
-
+// Some constants
 #define USAGE_MSG "Usage: CachingFileSystem rootdir mountdir " \
 	"numberOfBlocks fOld fNew"
+#define SYSERROR_MSG(f) "System Error: \"" << f << "\" has failed."
 #define EXIT_SUCC 0
 #define EXIT_FAIL 1
 #define OPEN_FLAGS O_RDONLY | O_DIRECT | O_SYNC
 
 using namespace std;
 
+struct fuse_operations caching_oper;
+
+/* ========== Helper Functions ========== */
+
 /**
- * Displays a usage message and exits.
+ * Displays a usage message and exits. Does not return.
  */
 void caching_usage()
 {
@@ -42,12 +41,17 @@ void caching_usage()
 	exit(EXIT_SUCC);
 }
 
-struct fuse_operations caching_oper;
+/**
+ * Displays an error message and exits. Does not return.
+ */
+void caching_syserror(const string &func)
+{
+	cerr << SYSERROR_MSG(func) << endl;
+	exit(EXIT_FAIL);
+}
 
 /**
  * Returns an absolute path (to fpath) from a relative one (from path)
- * If path doesn't point to a file, return -ENOENT, otherwise, returns
- * 0 and sets fpath to the full absolute path.
  */
 static void caching_fullpath(char fpath[PATH_MAX], const char *path)
 {
@@ -62,10 +66,15 @@ static void caching_fullpath(char fpath[PATH_MAX], const char *path)
 	strcpy(fpath, fullpath.c_str());
 }
 
-static bool is_log_path(const char *path)
+/**
+ * Returns true if the given path is the path to the log file, and false o/w
+ */ 
+static bool caching_is_log_path(const string &path)
 {
-	return string(path).find(LOG_FILE) != string::npos;
+	return path.find(LOG_FILE) == 0;
 }
+
+/* ========== Fuse Functions ========== */
 
 /** Get file attributes.
  *
@@ -83,7 +92,7 @@ int caching_getattr(const char *path, struct stat *statbuf)
 	caching_fullpath(fpath, path);
 	
 	// Make sure this isn't the log file
-	if (is_log_path(fpath))
+	if (caching_is_log_path(fpath))
 	{
 		return -ENOENT;
 	}	
@@ -120,7 +129,7 @@ int caching_fgetattr(const char *path, struct stat *statbuf,
 	caching_fullpath(fpath, path);
 
 	// Make sure this isn't the log file
-	if (is_log_path(fpath))
+	if (caching_is_log_path(fpath))
 	{
 		return -ENOENT;
 	}	
@@ -146,7 +155,6 @@ int caching_fgetattr(const char *path, struct stat *statbuf,
  */
 int caching_access(const char *path, int mask)
 {
-	//cout << "access" << endl; // -------------------------------------------------
 	// Write to log
 	writeToLog("access");	
 
@@ -155,7 +163,7 @@ int caching_access(const char *path, int mask)
 	caching_fullpath(fpath, path);
 
 	// Make sure this isn't the log file
-	if (is_log_path(fpath))
+	if (caching_is_log_path(fpath))
 	{
 		return -ENOENT;
 	}
@@ -193,22 +201,22 @@ int caching_open(const char *path, struct fuse_file_info *fi)
 	caching_fullpath(fpath, path);
 
 	// Make sure this isn't the log file
-	if (is_log_path(fpath))
+	if (caching_is_log_path(fpath))
 	{
 		return -ENOENT;
 	}
-
+	// Make sure the file is opened in RDONLY mode
 	if ((fi->flags & 3) != O_RDONLY)
 	{
 		return -EACCES;
 	}
-
+	
 	fd = open(fpath, OPEN_FLAGS);
 	if (fd < 0)
 	{
 		ret = -errno;
 	}
-
+	// Update the fd in the fuse_info struct, and set direct_io to 1
 	fi->fh = fd;
 	fi->direct_io = 1;
 	
@@ -245,7 +253,7 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 	char fpath[PATH_MAX];
 	caching_fullpath(fpath, path);
 
-	size_t bytesRead = 0; // Total bytes read
+	size_t bytesRead = 0;		// Total bytes read
 	bool shouldStop = false;
 
 	// Get the file's size
@@ -256,7 +264,7 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 	}
 
 	size_t fileSize = sb.st_size;
-	
+	// If the offset is beyond the file's data, return EOF (0 bytes read)
 	if ((size_t)offset >= fileSize)
 	{
 		return 0;
@@ -265,7 +273,7 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 	// Indices for the first block to read, the last and the current offst
 	size_t endOffset = std::min(offset + size, fileSize), 
 	       startBlock = offset / Block::size,
-	       endBlock = (endOffset - 1) / Block::size, // Note that end >= start
+	       endBlock = (endOffset - 1) / Block::size, 
 	       currOff = 0;		// The offset in the FILE (for pread)
 
 	// A buffer that holds the minimal number of entire blocks that 
@@ -273,6 +281,8 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 	char *aligned_buf = (char*)malloc(Block::size * 
 			(endBlock - startBlock + 1));
 	
+	// For every block, check if we have it in the cache, and if not
+	// create a new Block object, read the data to it and add to cache
 	for (size_t blockNum = startBlock; blockNum <= endBlock; ++blockNum)
 	{
 		if (shouldStop)
@@ -280,9 +290,7 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 			break;
 		}
 		currOff = blockNum * Block::size;
-		// If the block's not in the cache, read it from dist and
-		// add it.
-		if (getBlock(fpath, blockNum) < 0)
+		if (getBlock(fpath, blockNum) == NOT_IN_CACHE)
 		{
 			Block newBlock(fpath, blockNum);
 			ret = pread(fi->fh, newBlock.data, Block::size, 
@@ -290,11 +298,10 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 			if (ret < 0)
 			{
 				return -errno;
-			} // From here ret is non-negative...
+			} // From here, ret is non-negative...
 			else if (ret == 0)
 			{
-				//reachedEof = true;
-				break;
+				break; // Means EOF
 			}
 			else
 			{
@@ -320,7 +327,6 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 	{
 		// remove extra data from last block's end, only if such
 		// exists...
-		// bytesRead = Block::size - endOffset % Block::size;
 		bytesRead = size;
 	}
 	// Move data to output buffer and free allocated memory
@@ -400,7 +406,7 @@ int caching_opendir(const char *path, struct fuse_file_info *fi)
 	caching_fullpath(fpath, path);
 
 	// Make sure this isn't the log file
-	if (is_log_path(fpath))
+	if (caching_is_log_path(fpath))
 	{
 		return -ENOENT;
 	}
@@ -410,6 +416,7 @@ int caching_opendir(const char *path, struct fuse_file_info *fi)
 	{
 		ret = -errno;
 	}
+	// Update fd
 	fi->fh = (intptr_t) dirp;
 
 	return ret;
@@ -438,6 +445,7 @@ int caching_readdir(const char *, void *buf, fuse_fill_dir_t filler,
 	DIR *dirp;
 	struct dirent *dent;
 	dirp = (DIR*) (uintptr_t) fi->fh;
+	// If first entry is null, an error occured
 	dent = readdir(dirp);
 	if (dent == nullptr)
 	{
@@ -446,7 +454,7 @@ int caching_readdir(const char *, void *buf, fuse_fill_dir_t filler,
 	do
 	{
 		// don't list log
-		if (is_log_path(dent->d_name))
+		if (caching_is_log_path(dent->d_name))
 		{
 			continue;
 		}
@@ -464,7 +472,6 @@ int caching_readdir(const char *, void *buf, fuse_fill_dir_t filler,
  */
 int caching_releasedir(const char *, struct fuse_file_info *fi)
 {
-	//cout << "releasedir" << endl; 					// ---------
 	// Write to log
 	writeToLog("releasedir");	
 
@@ -474,7 +481,6 @@ int caching_releasedir(const char *, struct fuse_file_info *fi)
 /** Rename a file */
 int caching_rename(const char *path, const char *newpath)
 {
-	//cout << "rename" << endl;			// -----------------------
 	// Write to log
 	writeToLog("rename");	
 	
@@ -482,7 +488,7 @@ int caching_rename(const char *path, const char *newpath)
 	char fpath[PATH_MAX], fnewpath[PATH_MAX];
 	caching_fullpath(fpath, path);
 	// Make sure the oldpath isn't the log file
-	if (is_log_path(fpath))
+	if (caching_is_log_path(fpath))
 	{
 		return -ENOENT;
 	}
@@ -529,6 +535,7 @@ If a failure occurs in this function, do nothing
  */
 void caching_destroy(void *userdata)
 {
+	cache.clear(); // This frees cached blocks' data!
 	delete (CachingState*) userdata;	
 }
 
@@ -613,7 +620,9 @@ void init_caching_oper()
 	caching_oper.ftruncate = NULL;
 }
 
-
+/**
+ * Note that caching_usage and caching_syserror do not return.
+ */
 int main(int argc, char* argv[])
 {
 	// Check that the number of arguments is valid.
@@ -650,7 +659,11 @@ int main(int argc, char* argv[])
 	}
 	// Init static constant and private data
 	Block::size = sb.st_blksize;
-	CachingState *cachingData = new CachingState(rootdir);
+	CachingState *cachingData = new(std::notrhow) CachingState(rootdir);
+	if (cachingData == nullptr)
+	{
+		caching_syserror("new operator");
+	}
 
 	init_caching_oper();
 
@@ -660,11 +673,8 @@ int main(int argc, char* argv[])
 		argv[i] = NULL;
 	}
         argv[2] = (char*) "-s";
-	//argv[3] = (char*) "-f"; // Change before submission - delete this and change argc to 3
-	//argc = 4;
 	argc = 3;
 	
-	//cout << "Calling fuse_main... " << endl; // -------------------------
 	int fuse_stat = fuse_main(argc, argv, &caching_oper, cachingData);
 	return fuse_stat;
 }
