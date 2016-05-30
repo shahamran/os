@@ -33,7 +33,7 @@ tar:
 RM=rm -fv
 LOG_FILE=.filesystem.log
 clean:
-	$(RM) $(TEST_FILE) *.o $(LOG_FILE)
+	$(RM) $(TEST_FILE) *.o $(LOG_FILE) $(TARNAME)
 
 all: $(TEST_FILE)
 
