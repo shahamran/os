@@ -1,4 +1,4 @@
-CFLAGS=-std=c++11 -Wall -Wextra -g $$(pkg-config fuse --cflags --libs)
+CFLAGS=-std=c++11 -Wall -Wextra -g
 
 # cpp to object files rule
 %.o: %.cpp
@@ -6,43 +6,32 @@ CFLAGS=-std=c++11 -Wall -Wextra -g $$(pkg-config fuse --cflags --libs)
 
 # test rules
 TEST_SRC=CachingFileSystem.cpp Cache.h
-TEST_FILE=caching
+TEST_FILE=CachingFileSystem
 VALGRIND_FLAGS = --leak-check=full --show-possibly-lost=yes \
 		 --show-reachable=yes --undef-value-errors=yes
+TEST_PARAMS=/tmp/root/ /tmp/mount/ 100 0.33 0.2
 
 $(TEST_FILE): $(TEST_SRC) 
-	$(CXX) $< $(CFLAGS) -o $@
+	$(CXX) $< $(CFLAGS) $$(pkg-config fuse --cflags --libs) -o $@
 
-ValgrindTest: $(TEST_OBJ)
-	valgrind $(VALGRIND_FLAGS) ./$<
-
-
-# library rules
-#$(LIBTARGET): $(LIBOBJ)
-#	$(AR) $(ARFLAGS) $@ $^
-#	$(RANLIB) $@
-#
-#$(LIBOBJ): $(LIBSRC)
-#	$(CXX) $(CFLAGS) -c $< -o $(LIBOBJ)
-
-# cleaning and such
-RM=rm -fv
-LOG_FILE=.filesystem.log
-clean:
-	$(RM) $(TEST_FILE) $(LIBTARGET) *.o $(LOG_FILE)
-
-depend:
-	makedepend -- $(CFLAGS) -- $(SRC) $(LIBSRC)
+# valgrind rule
+ValgrindTest: $(TEST_FILE)
+	valgrind $(VALGRIND_FLAGS) ./$< $(TEST_PARAMS)
 
 # tar rule
 TAR=tar
 TARFLAGS=-cvf
 TARNAME=ex4.tar
-EXTRA_HEADERS=#TODO
-TARSRCS=$(LIBSRC) $(TEST_SRC) Makefile README $(EXTRA_HEADERS) 
+EXTRA_HEADERS=
+TARSRCS=$(TEST_SRC) Makefile README $(EXTRA_HEADERS) 
 
 tar:
 	$(TAR) $(TARFLAGS) $(TARNAME) $(TARSRCS)
+
+RM=rm -fv
+LOG_FILE=.filesystem.log
+clean:
+	$(RM) $(TEST_FILE) *.o $(LOG_FILE)
 
 all: $(TEST_FILE)
 

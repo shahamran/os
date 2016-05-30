@@ -673,7 +673,8 @@ int main(int argc, char* argv[])
 		argv[i] = NULL;
 	}
         argv[2] = (char*) "-s";
-	argc = 3;
+	//argv[3] = (char*) "-f";	// <<===== For Valgrind! =======
+	argc = 3; // 4;
 	
 	int fuse_stat = fuse_main(argc, argv, &caching_oper, cachingData);
 	return fuse_stat;

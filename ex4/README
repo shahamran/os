@@ -4,19 +4,52 @@ EX: 4
 
 FILES:
 README			-- This file
-
+Makefile		-- No arguments creates the CachingFileSystem object
+				make tar creates the tar file.
+CachingFileSystem.cpp	-- The implementation of all filesystem functions.
+Cache.h			-- decleration and implementation of the caching
+				algorithm.
 REMARKS:
+* The filesystem logic and caching logic are as separated as I could manage.
+* In the Cache.h file, I defined a Block object which holds all the data
+  I needed for blocks in thie ex. Note that upon construction, it allocates
+  aligned memory block, which is freed upon object destruction.
+* The Block object also have move logic, to prevent multiple allocations for
+  the same block of data. That is, when a block is passed by value, it is
+  copied using the move ctor which steals its data and does not allocate any
+  new data - making it much more efficient.
+* The log file is written using std::ofstream object, which is kept as a 
+  data member of the CachingState object (the private_data of fuse).
+* The Block size is determined in the main function, and saved as a static
+  data member of the Block class, making it availabe all over the program.
+* The cache data structure is also defined as a static global variable.
 
 ANSWERS:
 
 Q1:
+The heap memory segment is (just as other memory segments of the process)
+given by a virtual memory address, in a space much bigger (usually) than
+the available physical memory. Thus, the OS can save the block (page) in
+which the heap is stored - and the 'cached' data with it - to the disk.
+This may happen if the cache is very big, the memory is small, or the system
+is overloaded with memory consuming processes, making a cache hit even less
+efficient than a regular read from the disk, since iterating over all cached
+blocks may be involving reading from the disk.
+
+tl;dr - no, this method is not always faster than regular disk access.
 
 Q2:
 
 Q3:
+LRU > LFU:
+
 
 Q4:
+Not-increasing the refCount in the new section attempts to solve the problem
+of blocks being referenced a lot in a very short time - due to temporal
+locality - and are unneeded after that short period. In this case, this
+blocks' refCount may be very high and therefore won't be evicted, although
+they are not used anymore, whereas blocks that are referenced less but more
+constantly will be evicted in their place even though they shouldn't.
+Defining the new section tries to solve that problem.
 
-Q5:
-
-Q6:
