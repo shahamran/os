@@ -7,14 +7,16 @@ CFLAGS=-std=c++11 -Wall -Wextra -g
 # test rules
 TEST_SRC=CachingFileSystem.cpp Cache.h
 TEST_FILE=CachingFileSystem
-VALGRIND_FLAGS = --leak-check=full --show-possibly-lost=yes \
-		 --show-reachable=yes --undef-value-errors=yes
-TEST_PARAMS=/tmp/root/ /tmp/mount/ 100 0.33 0.2
 
 $(TEST_FILE): $(TEST_SRC) 
 	$(CXX) $< $(CFLAGS) $$(pkg-config fuse --cflags --libs) -o $@
 
+
 # valgrind rule
+VALGRIND_FLAGS = --leak-check=full --show-possibly-lost=yes \
+		 --show-reachable=yes --undef-value-errors=yes
+TEST_PARAMS=/tmp/root/ /tmp/mount/ 100 0.33 0.2
+
 ValgrindTest: $(TEST_FILE)
 	valgrind $(VALGRIND_FLAGS) ./$< $(TEST_PARAMS) &
 
