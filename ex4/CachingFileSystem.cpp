@@ -659,7 +659,7 @@ int main(int argc, char* argv[])
 	}
 	// Init static constant and private data
 	Block::size = sb.st_blksize;
-	CachingState *cachingData = new(std::notrhow) CachingState(rootdir);
+	CachingState *cachingData = new(std::nothrow) CachingState(rootdir);
 	if (cachingData == nullptr)
 	{
 		caching_syserror("new operator");
