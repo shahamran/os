@@ -64,9 +64,7 @@ static void caching_fullpath(char fpath[PATH_MAX], const char *path)
 
 static bool is_log_path(const char *path)
 {
-	char logpath[PATH_MAX];
-	caching_fullpath(logpath, LOG_FILE);
-	return string(path).find(logpath) != string::npos;
+	return string(path).find(LOG_FILE) != string::npos;
 }
 
 /** Get file attributes.
@@ -77,14 +75,12 @@ static bool is_log_path(const char *path)
  */
 int caching_getattr(const char *path, struct stat *statbuf)
 {
-	//cout << "getattr" << endl; // -------------------------------------------
+	// Write to log
+	writeToLog("getattr");	
+
 	int ret = 0;
 	char fpath[PATH_MAX];
 	caching_fullpath(fpath, path);
-
-	// Write to log
-	writeToLog("getattr");	
-	writeToLog(string("getattr path: ") + fpath);
 	
 	// Make sure this isn't the log file
 	if (is_log_path(fpath))
@@ -113,14 +109,22 @@ int caching_getattr(const char *path, struct stat *statbuf)
  *
  * Introduced in version 2.5
  */
-int caching_fgetattr(const char *, struct stat *statbuf, 
+int caching_fgetattr(const char *path, struct stat *statbuf, 
 		     struct fuse_file_info *fi)
 {
-	//cout << "fgetattr" << endl; // ----------------------------------------
 	// Write to log
 	writeToLog("fgetattr");	
 
 	int ret = 0;
+	char fpath[PATH_MAX];
+	caching_fullpath(fpath, path);
+
+	// Make sure this isn't the log file
+	if (is_log_path(fpath))
+	{
+		return -ENOENT;
+	}	
+
 	ret = fstat(fi->fh, statbuf);
 	if (ret < 0)
 	{
@@ -149,6 +153,7 @@ int caching_access(const char *path, int mask)
 	int ret = 0;
 	char fpath[PATH_MAX];
 	caching_fullpath(fpath, path);
+
 	// Make sure this isn't the log file
 	if (is_log_path(fpath))
 	{
@@ -180,7 +185,6 @@ int caching_access(const char *path, int mask)
  */
 int caching_open(const char *path, struct fuse_file_info *fi)
 {
-	//cout << "open" << endl; // -----------------------------------------------
 	// Write to log
 	writeToLog("open");	
 
@@ -242,7 +246,7 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 	caching_fullpath(fpath, path);
 
 	size_t bytesRead = 0; // Total bytes read
-	bool /*reachedEof = false, */shouldStop = false;
+	bool shouldStop = false;
 
 	// Get the file's size
 	struct stat sb;
@@ -316,7 +320,8 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
 	{
 		// remove extra data from last block's end, only if such
 		// exists...
-		bytesRead -= Block::size - endOffset % Block::size;
+		// bytesRead = Block::size - endOffset % Block::size;
+		bytesRead = size;
 	}
 	// Move data to output buffer and free allocated memory
 	memcpy(buf, aligned_buf + offset % Block::size, bytesRead);
@@ -349,7 +354,6 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset,
  */
 int caching_flush(const char *, struct fuse_file_info *)
 {
-	//cout << "flush" << endl; // ----------------------------------------------
 	// Write to log
 	writeToLog("flush");	
 
@@ -372,7 +376,6 @@ int caching_flush(const char *, struct fuse_file_info *)
  */
 int caching_release(const char *, struct fuse_file_info *fi)
 {
-	//cout << "release" << endl; // ------------------------------------------
 	// Write to log
 	writeToLog("release");	
 
@@ -388,7 +391,6 @@ int caching_release(const char *, struct fuse_file_info *fi)
  */
 int caching_opendir(const char *path, struct fuse_file_info *fi)
 {
-	//cout << "opendir" << endl; 		// -------------------------------
 	// Write to log
 	writeToLog("opendir");	
 
@@ -396,6 +398,13 @@ int caching_opendir(const char *path, struct fuse_file_info *fi)
 	int ret = 0;
 	char fpath[PATH_MAX];
 	caching_fullpath(fpath, path);
+
+	// Make sure this isn't the log file
+	if (is_log_path(fpath))
+	{
+		return -ENOENT;
+	}
+
 	dirp = opendir(fpath);
 	if (dirp == nullptr)
 	{
@@ -422,7 +431,6 @@ int caching_opendir(const char *path, struct fuse_file_info *fi)
 int caching_readdir(const char *, void *buf, fuse_fill_dir_t filler, 
 		    off_t, struct fuse_file_info *fi)
 {
-	//cout << "readdir" << endl;				// ---------------------
 	// Write to log
 	writeToLog("readdir");	
 
@@ -505,7 +513,6 @@ For your task, the function needs to return NULL always
  */
 void *caching_init(struct fuse_conn_info *)
 {
-	cout << "caching_init" << endl; // -------------------------
 	return CACHING_STATE;
 }
 
@@ -522,7 +529,6 @@ If a failure occurs in this function, do nothing
  */
 void caching_destroy(void *userdata)
 {
-	cout << "caching_destroy" << endl; // -------------------------
 	delete (CachingState*) userdata;	
 }
 

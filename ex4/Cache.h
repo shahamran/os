@@ -121,13 +121,16 @@ public:
 	bool isEqualTo(const Block& other)
 	{
 		return  (filename.compare(other.filename) == 0) &&
-			(number == other.number);
+			(number == other.number &&
+			 written == other.written);
 	}
 
 	bool isEqualTo(const string& otherFile, size_t otherNum)
 	{
+		// Check whether the filename and block number match and
+		// if this is a fully written block.
 		return (filename.compare(otherFile) == 0) &&
-			number == otherNum;
+			number == otherNum && written == Block::size;
 	}
 };
 
