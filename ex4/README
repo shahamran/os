@@ -9,6 +9,7 @@ Makefile		-- No arguments creates the CachingFileSystem object
 CachingFileSystem.cpp	-- The implementation of all filesystem functions.
 Cache.h			-- decleration and implementation of the caching
 				algorithm.
+
 REMARKS:
 * The filesystem logic and caching logic are as separated as I could manage.
 * In the Cache.h file, I defined a Block object which holds all the data
@@ -23,6 +24,7 @@ REMARKS:
 * The Block size is determined in the main function, and saved as a static
   data member of the Block class, making it availabe all over the program.
 * The cache data structure is also defined as a static global variable.
+
 
 ANSWERS:
 
@@ -39,10 +41,39 @@ blocks may be involving reading from the disk.
 tl;dr - no, this method is not always faster than regular disk access.
 
 Q2:
+The problem with implementing sophisticated page swapping algorithms is that
+when reading/writing pages from/to the disk directly, the OS is occupied by
+that operation, and can't handle other request in the meantime. Therefore
+there is a need in serious page faults minimization which will yield more
+complicated algorithms. Instead, the OS can use a DMA controller, which will
+handle the page swapping, and continue to perform other tasks.
 
 Q3:
-LRU > LFU:
+__ LRU > LFU __
+Consider the following case - reading the same two files a lot of times, and
+then moving to handle (only) other files in no particular order.
+The LFU will bring the blocks of the first 2 files to the cache, and because
+of their high reference count they will be stuck there for a long time, even
+though they aren't needed anymore. In contrast, the LRU will cache only the
+data that is recently accessed (more precisely, evict the LRU blocks) thus
+will be quick to forget those first 2 files, leaving room for other relevant
+data.
 
+__ LFU > LRU __
+Consider a program that maintains a log file (or some constant set of files),
+while handling other files and data at the same time. The log is accessed all
+the time, therefore shouldn't be evicted when handling other files, but the
+LRU will do just that - it does not remember the file's high usage, whereas
+the LFU will handle this situation better.
+
+__ {LFU,LRU} == :-( __
+A program that searches for a file in a very large files pool by iterating
+over it will fail both algorithms. The LFU will fail because every file is
+accessed exactly once, thus the replacement rule is meaningless. The LRU will
+fail for the same reason - A recent block won't be accessed again so keeping
+it in the cache is a waste.
+For this case, an algorithm that maximizes spatial locality will do better,
+assuming the iteration is in some reasonable order.
 
 Q4:
 Not-increasing the refCount in the new section attempts to solve the problem

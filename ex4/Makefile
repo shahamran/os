@@ -16,7 +16,7 @@ $(TEST_FILE): $(TEST_SRC)
 
 # valgrind rule
 ValgrindTest: $(TEST_FILE)
-	valgrind $(VALGRIND_FLAGS) ./$< $(TEST_PARAMS)
+	valgrind $(VALGRIND_FLAGS) ./$< $(TEST_PARAMS) &
 
 # tar rule
 TAR=tar
