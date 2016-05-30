@@ -11,7 +11,7 @@ VALGRIND_FLAGS = --leak-check=full --show-possibly-lost=yes \
 		 --show-reachable=yes --undef-value-errors=yes
 
 $(TEST_FILE): $(TEST_SRC) 
-	$(CXX) -o $@ $(CFLAGS) $<
+	$(CXX) $< $(CFLAGS) -o $@
 
 ValgrindTest: $(TEST_OBJ)
 	valgrind $(VALGRIND_FLAGS) ./$<

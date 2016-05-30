@@ -54,13 +54,10 @@ static void caching_fullpath(char fpath[PATH_MAX], const char *path)
 	// Get absolute path from the given path
 	// (note that this is absolute from mountdir root)
 	char abspath[PATH_MAX];
-	realpath(path, abspath);
-	string fullpath = CACHING_STATE->rootdir + "/" + abspath;
+	string fullpath = CACHING_STATE->rootdir + "/" + path;
 	// Remove double slashes...
-	auto end = std::unique(fullpath.begin(), fullpath.end(),
-			[](char a, char b)
-			{return a == '/' && b == '/';});
-	fullpath.erase(end, fullpath.end());
+	realpath(fullpath.c_str(), abspath);
+	fullpath = abspath;
 	// Return full path as c_str
 	strcpy(fpath, fullpath.c_str());
 }
@@ -69,7 +66,7 @@ static bool is_log_path(const char *path)
 {
 	char logpath[PATH_MAX];
 	caching_fullpath(logpath, LOG_FILE);
-	return strcmp(path, logpath) == 0;
+	return string(path).find(logpath) != string::npos;
 }
 
 /** Get file attributes.
@@ -87,6 +84,7 @@ int caching_getattr(const char *path, struct stat *statbuf)
 
 	// Write to log
 	writeToLog("getattr");	
+	writeToLog(string("getattr path: ") + fpath);
 	
 	// Make sure this isn't the log file
 	if (is_log_path(fpath))
@@ -437,10 +435,10 @@ int caching_readdir(const char *, void *buf, fuse_fill_dir_t filler,
 	{
 		return -errno;
 	}
-	while ((dent = readdir(dirp)) != nullptr)
+	do
 	{
 		// don't list log
-		if (strcmp(dent->d_name, LOG_FILE) == 0)
+		if (is_log_path(dent->d_name))
 		{
 			continue;
 		}
@@ -448,7 +446,7 @@ int caching_readdir(const char *, void *buf, fuse_fill_dir_t filler,
 		{
 			return -ENOMEM;
 		}
-	}
+	} while ((dent = readdir(dirp)) != nullptr);
 	return ret;
 }
 
