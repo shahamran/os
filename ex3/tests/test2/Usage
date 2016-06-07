@@ -1,0 +1,11 @@
+Instructions:
+ - Compile your MapReduceFramework library.
+ - Place current files in a 'new folder' and copy your library into 'new folder'
+ - Run make file with: make
+ - Run test usage: Usage for Tester: multiLevelThreads <folder with files inside>
+ - Check output with the 'test-expected-output' file
+ 
+ Tips:
+  - Try to run with different multiLevelThreads
+  
+ 
