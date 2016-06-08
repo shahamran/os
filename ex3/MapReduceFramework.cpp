@@ -84,9 +84,6 @@ typedef vector<pair<k2Base*, v2Base*>> K2_V2_LIST;
 vector<pair<pthread_t, K2_V2_LIST*>> mapResultLists;
 
 /* Shuffle Variables */
-/* An array of indices that specify till what index in the map-lists *
- * the shuffle thread has already read */
-vector<size_t> shuffleCurrIndex;
 /* Note that the map compares keys using ptr_less defined above */
 map<k2Base*, V2_LIST*, ptr_less<k2Base>> shuffleOut;
 
@@ -98,6 +95,7 @@ vector	<pair<pthread_t, K3_V3_LIST*>> reduceResultLists;
 multimap<k3Base*, v3Base*, ptr_less<k3Base>> finalOutputMap;
 
 /* Mutexes */
+vector<pthread_mutex_t> mutex_map_write; // <--
 pthread_mutex_t mutex_map_read;		/* protect input list */
 pthread_mutex_t mutex_em_map;		/* barrier to init maps */
 pthread_mutex_t mutex_er_list;		/* barrier to init reduce dasts */
@@ -134,6 +132,9 @@ string getTimeStr()
 void init(int multiThreadLevel)
 {
 	// Pthread types
+	mutex_map_write.resize(multiThreadLevel);
+	for (int i = 0; i < multiThreadLevel; ++i)
+		my_pthread_mutex_init(&mutex_map_write[i], nullptr);
 	my_pthread_mutex_init(&mutex_map_read, nullptr);
 	my_pthread_mutex_init(&mutex_em_map, nullptr);
 	my_pthread_mutex_init(&mutex_er_list, nullptr);
@@ -145,7 +146,6 @@ void init(int multiThreadLevel)
 	more_to_shuffle = true;
 	threadList.resize(multiThreadLevel);
 	mapResultLists.resize(multiThreadLevel);
-	shuffleCurrIndex.resize(multiThreadLevel);
 	reduceResultLists.resize(multiThreadLevel);
 }
 
@@ -155,6 +155,8 @@ void init(int multiThreadLevel)
 void cleanup()
 {
 	// Pthread types
+	for (size_t i = 0; i < mutex_map_write.size(); ++i)
+		my_pthread_mutex_destroy(&mutex_map_write[i]);
 	my_pthread_mutex_destroy(&mutex_map_read);
 	my_pthread_mutex_destroy(&mutex_em_map);
 	my_pthread_mutex_destroy(&mutex_er_list);
@@ -176,11 +178,11 @@ void cleanup()
 		it->second = nullptr;
 	}
 	// Variable & data structures reset
+	mutex_map_write.clear();
 	shuffleThread = 0;
 	threadList.clear();
 	mapResultLists.clear();
 	reduceResultLists.clear();
-	shuffleCurrIndex.clear();
 	shuffleOut.clear();
 	reduceIn.clear();
 	finalOutputMap.clear();
@@ -240,8 +242,6 @@ void* Shuffle(void *)
 	v2Base* currVal;
 	auto foundList = shuffleOut.end();
 	V2_LIST* newList = nullptr;
-	K2_V2_LIST* currList = nullptr;
-	size_t currIdx = 0;
 
 	my_pthread_mutex_lock(&mutex_more_to_shuffle); 
 	while (more_to_shuffle)
@@ -261,13 +261,12 @@ void* Shuffle(void *)
 		// Check every ExecMap container for items to shuffle
 		for (size_t i = 0; i < mapResultLists.size(); ++i)
 		{
-			currList = mapResultLists[i].second;
 			// Read all unread data and shuffle it.
-			for (currIdx = shuffleCurrIndex[i];
-			     currList != nullptr && currIdx < currList->size();
-			     ++currIdx)
+			my_pthread_mutex_lock(&mutex_map_write[i]);
+			while (!mapResultLists[i].second->empty())
 			{
-				currPair = currList->at(currIdx);
+				currPair = mapResultLists[i].second->back();
+				mapResultLists[i].second->pop_back();
 				currKey = currPair.first;
 				currVal = currPair.second;
 				foundList = shuffleOut.find(currKey);
@@ -291,8 +290,7 @@ void* Shuffle(void *)
 					foundList->second->push_back(currVal);
 				}
 			}
-			// 'Mark' all read data as read
-			shuffleCurrIndex[i] = currIdx;
+			my_pthread_mutex_unlock(&mutex_map_write[i]);
 		}
 	}
 	my_pthread_mutex_unlock(&mutex_more_to_shuffle);
@@ -492,8 +490,10 @@ void Emit2(k2Base *key, v2Base *val)
 	{
 		if (pthread_equal(mapResultLists[i].first, currThread)) 
 		{
+			my_pthread_mutex_lock(&mutex_map_write[i]);
 			mapResultLists[i].second->push_back(
 					          std::make_pair(key, val) );
+			my_pthread_mutex_unlock(&mutex_map_write[i]);
 			return;
 		}
 	}
