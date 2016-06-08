@@ -1,0 +1,23 @@
+My Errors:
+* First, I accidently submitted an old tar in which one major problem was yet
+  to be fixed. That is, I already made the change (prior to submission), and
+  submitted the unchanged file ( :-( ) 
+  The problem was segfault due to uninitialized ExecReduce data structures, 
+  that was fixed using a simple mutex barrier to prevent the ExecReduce
+  threads from running until their data structures are initialized - exactly
+  the same as the ExecMap problem that was discussed in the forums.
+
+* My second error was a tricky one. I tried to avoid a situation in which the
+  shuffle blocks the execmaps frequently, while reading their output. 
+  Therefore I used a vector of ExecMap results (for each thread) to which the
+  ExecMap pushed new data. The shuffle read it from the beggining while 
+  keeping track of the index it read (without locking it, since we're only
+  reading and not modifying). The problem is when the shuffle tried to read
+  from this vector in the same time the ExecMap pushed data to it, and this
+  data adding invoked an internal vector's data reallocation, it attempted to
+  access invalidated data - and that resulted in a segfault.
+  Note that a simple 'realloc' wouldn't have invalidate the vector's data -
+  it happened only when a full blown 'free' + 'malloc' was performed.
+  This happened only when the maps pushed a huge amount of data - 
+  I tested my library with big files and complex situations - and didn't
+  encounter this problem. Only running the WordCount test did.
