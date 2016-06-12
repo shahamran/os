@@ -1,0 +1,13 @@
+Copy your MapReduceFramework.a file into the folder together with Search.o & Makefile
+run "make Search" to create an executable of the Search program
+
+USAGE FOR SEARCH:
+
+./Search <NumOfThreads> <FOLDER with test files> <OUTPUT_FILE to create>
+
+For example, if I put the "os50Folders" in /tmp/tests/. And wish to create an output file 
+named "OS2016.output" in /tmp/outputs then the run will be:
+
+./Search <NumOfThreads> /tmp/tests/os50Folders /tmp/tests/OS2016.output
+
+The Search program creates an output file which you can use a diff checker on all

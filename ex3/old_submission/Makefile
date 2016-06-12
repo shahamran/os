@@ -25,23 +25,8 @@ VALGRIND_FLAGS = --leak-check=full --show-possibly-lost=yes \
 $(TEST_FILE): $(TEST_SRC) $(LIBTARGET) 
 	$(CXX) $(CFLAGS) $(LOADLIBES) $^ -o $@
 
-COUNT_DIRS:
-	number=0 ; while [[ $$number -le 49 ]] ; do \
-		echo $$number ; \
-		((number = number + 1)) ; \
-	done
-
-# Directory that contains all search dirs
-TEST_DIR=tests/test1/theirs/os_50folders
-# Gets all dirs inside $TEST_DIR
-TEST_DIRS=$(wildcard $(TEST_DIR)/*)
-# String to search
-TEST_SUBSTR=os
-# Prints: <SUBSTRING_TO_SEARCH> <ALL_TEST_DIRS>
-TEST_ARGS=$(TEST_SUBSTR) $(foreach dir,$(TEST_DIRS),$(dir) ) 
-
-ValgrindTest: $(TEST_FILE)
-	valgrind $(VALGRIND_FLAGS) ./$< $(TEST_ARGS)
+ValgrindTest: $(TEST_OBJ)
+	valgrind $(VALGRIND_FLAGS) ./$<
 
 
 # library rules
