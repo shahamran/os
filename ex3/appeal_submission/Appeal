@@ -1,4 +1,5 @@
 My Errors:
+
 * First, I accidently submitted an old tar in which one major problem was yet
   to be fixed. That is, I already made the change (prior to submission), and
   submitted the unchanged file ( :-( ) 
@@ -6,9 +7,10 @@ My Errors:
   that was fixed using a simple mutex barrier to prevent the ExecReduce
   threads from running until their data structures are initialized - exactly
   the same as the ExecMap problem that was discussed in the forums.
+  This is a stupid-reckless mistake that failed probably 90% of the tests.
 
 * My second error was a tricky one. I tried to avoid a situation in which the
-  shuffle blocks the execmaps frequently, while reading their output. 
+  shuffle blocks the ExecMaps frequently, while reading their output. 
   Therefore I used a vector of ExecMap results (for each thread) to which the
   ExecMap pushed new data. The shuffle read it from the beggining while 
   keeping track of the index it read (without locking it, since we're only
@@ -20,4 +22,10 @@ My Errors:
   it happened only when a full blown 'free' + 'malloc' was performed.
   This happened only when the maps pushed a huge amount of data - 
   I tested my library with big files and complex situations - and didn't
-  encounter this problem. Only running the WordCount test did.
+  encounter this problem. Only running the WordCount test did on very big files
+  did.
+  
+  This was fixed using an array (vector) of mutexes for each ExecMap, which is
+  locked whenever the ExecMap pushes data to the vector (and unlocked after
+  that), and when the shuffle tries to access this ExecMap's data.
+
