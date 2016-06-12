@@ -4,7 +4,7 @@ default: all
 EXECSEARCH = Search
 EXECWORDCOUNT = WordCount
 LIB = MapReduceFramework.a
-CFLAGS = -Wall -Wvla -g -std=c++11 -lpthread -L. -lcrypto $(INCS)
+CFLAGS = -Wall -Wvla -g -std=c++11 -pthread -L. -lcrypto $(INCS)
 
 all: WordCount
 
