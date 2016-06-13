@@ -136,7 +136,7 @@ string getTimeStr()
 void init(int multiThreadLevel)
 {
 	// Pthread types
-	mutex_map_write.resize(multiThreadLevel); // <-- x 4
+	mutex_map_write.resize(multiThreadLevel); // <-- 
 	for (int i = 0; i < multiThreadLevel; ++i)
 		my_pthread_mutex_init(&mutex_map_write[i], nullptr);
 	my_pthread_mutex_init(&mutex_er_list, nullptr);
@@ -160,7 +160,7 @@ void init(int multiThreadLevel)
 void cleanup()
 {
 	// Pthread types
-	for (size_t i = 0; i < mutex_map_write.size(); ++i) // <-- x 3
+	for (size_t i = 0; i < mutex_map_write.size(); ++i) // <-- 
 		my_pthread_mutex_destroy(&mutex_map_write[i]);
 	mutex_map_write.clear();
 	my_pthread_mutex_destroy(&mutex_er_list);
